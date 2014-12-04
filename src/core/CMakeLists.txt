@@ -29,6 +29,7 @@ set(SRCS
             hle/kernel/kernel.cpp
             hle/kernel/mutex.cpp
             hle/kernel/shared_memory.cpp
+            hle/kernel/timer.cpp
             hle/kernel/thread.cpp
             hle/service/ac_u.cpp
             hle/service/am_net.cpp
@@ -107,6 +108,7 @@ set(HEADERS
             hle/kernel/kernel.h
             hle/kernel/mutex.h
             hle/kernel/shared_memory.h
+            hle/kernel/timer.h
             hle/kernel/thread.h
             hle/service/ac_u.h
             hle/service/am_net.h

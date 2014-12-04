@@ -34,6 +34,7 @@ enum class HandleType : u32 {
     Semaphore       = 11,
     Archive         = 12,
     Directory       = 13,
+    Timer           = 14,
 };
 
 enum {

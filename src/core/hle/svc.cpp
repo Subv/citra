@@ -14,6 +14,7 @@
 #include "core/hle/kernel/mutex.h"
 #include "core/hle/kernel/shared_memory.h"
 #include "core/hle/kernel/thread.h"
+#include "core/hle/kernel/timer.h"
 
 #include "core/hle/function_wrappers.h"
 #include "core/hle/result.h"
@@ -330,6 +331,20 @@ static Result ClearEvent(Handle evt) {
     return Kernel::ClearEvent(evt).raw;
 }
 
+/// Creates a timer
+static Result CreateTimer(Handle* handle, u32 reset_type) {
+    ResultCode res = Kernel::CreateTimer(handle, static_cast<ResetType>(reset_type));
+    DEBUG_LOG(SVC, "called reset_type=0x%08X : created handle=0x%08X",
+        reset_type, *handle);
+    return res.raw;
+}
+
+/// Clears a timer
+static Result ClearTimer(Handle handle) {
+    DEBUG_LOG(SVC, "called event=0x%08X", handle);
+    return Kernel::ClearTimer(handle).raw;
+}
+
 /// Sleep the current thread
 static void SleepThread(s64 nanoseconds) {
     DEBUG_LOG(SVC, "called nanoseconds=%lld", nanoseconds);
@@ -370,10 +385,10 @@ const HLE::FunctionDef SVC_Table[] = {
     {0x17, HLE::Wrap<CreateEvent>,          "CreateEvent"},
     {0x18, HLE::Wrap<SignalEvent>,          "SignalEvent"},
     {0x19, HLE::Wrap<ClearEvent>,           "ClearEvent"},
-    {0x1A, nullptr,                         "CreateTimer"},
+    {0x1A, HLE::Wrap<CreateTimer>,          "CreateTimer"},
     {0x1B, nullptr,                         "SetTimer"},
     {0x1C, nullptr,                         "CancelTimer"},
-    {0x1D, nullptr,                         "ClearTimer"},
+    {0x1D, HLE::Wrap<ClearTimer>,           "ClearTimer"},
     {0x1E, nullptr,                         "CreateMemoryBlock"},
     {0x1F, HLE::Wrap<MapMemoryBlock>,       "MapMemoryBlock"},
     {0x20, nullptr,                         "UnmapMemoryBlock"},
