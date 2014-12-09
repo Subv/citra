@@ -24,7 +24,7 @@
 
 namespace SOC_U {
 
-static void socket(Service::Interface* self) {
+static void Socket(Service::Interface* self) {
     u32* cmd_buffer = Service::GetCommandBuffer();
     u32 domain = cmd_buffer[1]; // Address family
     u32 type = cmd_buffer[2];
@@ -49,7 +49,7 @@ static void socket(Service::Interface* self) {
     cmd_buffer[1] = 0;
 }
 
-static void bind(Service::Interface* self) {
+static void Bind(Service::Interface* self) {
     u32* cmd_buffer = Service::GetCommandBuffer();
     u32 socket_handle = cmd_buffer[1];
     u32 len = cmd_buffer[2];
@@ -62,7 +62,7 @@ static void bind(Service::Interface* self) {
     cmd_buffer[1] = 0;
 }
 
-static void fcntl(Service::Interface* self) {
+static void Fcntl(Service::Interface* self) {
     u32* cmd_buffer = Service::GetCommandBuffer();
     u32 socket_handle = cmd_buffer[1];
     u32 cmd = cmd_buffer[2];
@@ -85,7 +85,7 @@ static void fcntl(Service::Interface* self) {
     cmd_buffer[1] = 0;
 }
 
-static void listen(Service::Interface* self) {
+static void Listen(Service::Interface* self) {
     u32* cmd_buffer = Service::GetCommandBuffer();
     u32 socket_handle = cmd_buffer[1];
     u32 backlog = cmd_buffer[2];
@@ -94,7 +94,7 @@ static void listen(Service::Interface* self) {
     cmd_buffer[1] = 0;
 }
 
-static void accept(Service::Interface* self) {
+static void Accept(Service::Interface* self) {
     u32* cmd_buffer = Service::GetCommandBuffer();
     u32 socket_handle = cmd_buffer[1];
     socklen_t max_addr_len = static_cast<socklen_t>(cmd_buffer[2]);
@@ -108,7 +108,7 @@ static void accept(Service::Interface* self) {
     cmd_buffer[1] = 0;
 }
 
-static void gethostid(Service::Interface* self) {
+static void GetHostId(Service::Interface* self) {
     u32* cmd_buffer = Service::GetCommandBuffer();
 
     char name[128];
@@ -120,7 +120,7 @@ static void gethostid(Service::Interface* self) {
     cmd_buffer[1] = 0;
 }
 
-static void close(Service::Interface* self) {
+static void Close(Service::Interface* self) {
     u32* cmd_buffer = Service::GetCommandBuffer();
     u32 socket_handle = cmd_buffer[1];
 
@@ -132,7 +132,7 @@ static void close(Service::Interface* self) {
     cmd_buffer[1] = 0;
 }
 
-static void sendto(Service::Interface* self) {
+static void SendTo(Service::Interface* self) {
     u32* cmd_buffer = Service::GetCommandBuffer();
     u32 socket_handle = cmd_buffer[1];
     u32 len = cmd_buffer[2];
@@ -146,7 +146,7 @@ static void sendto(Service::Interface* self) {
     cmd_buffer[1] = 0;
 }
 
-static void recvfrom(Service::Interface* self) {
+static void RecvFrom(Service::Interface* self) {
     u32* cmd_buffer = Service::GetCommandBuffer();
     u32 socket_handle = cmd_buffer[1];
     u32 len = cmd_buffer[2];
@@ -177,28 +177,28 @@ static void ShutdownSockets(Service::Interface* self) {
 
 const Interface::FunctionInfo FunctionTable[] = {
     {0x00010044, InitializeSockets,             "InitializeSockets"},
-    {0x000200C2, socket,                        "socket"},
-    {0x00030082, listen,                        "listen"},
-    {0x00040082, accept,                        "accept"},
-    {0x00050084, bind,                          "bind"},
-    {0x00060084, nullptr,                       "connect"},
+    {0x000200C2, Socket,                        "Socket"},
+    {0x00030082, Listen,                        "Listen"},
+    {0x00040082, Accept,                        "Accept"},
+    {0x00050084, Bind,                          "Bind"},
+    {0x00060084, nullptr,                       "Connect"},
     {0x00070104, nullptr,                       "recvfrom_other"},
-    {0x00080102, recvfrom,                      "recvfrom"},
+    {0x00080102, RecvFrom,                      "RecvFrom"},
     {0x00090106, nullptr,                       "sendto_other"},
-    {0x000A0106, sendto,                        "sendto"},
-    {0x000B0042, close,                         "close"},
-    {0x000C0082, nullptr,                       "shutdown"},
-    {0x000D0082, nullptr,                       "gethostbyname"},
-    {0x000E00C2, nullptr,                       "gethostbyaddr"},
+    {0x000A0106, SendTo,                        "SendTo"},
+    {0x000B0042, Close,                         "Close"},
+    {0x000C0082, nullptr,                       "Shutdown"},
+    {0x000D0082, nullptr,                       "GetHostByName"},
+    {0x000E00C2, nullptr,                       "GetHostByAddr"},
     {0x000F0106, nullptr,                       "unknown_resolve_ip"},
-    {0x00110102, nullptr,                       "getsockopt"},
-    {0x00120104, nullptr,                       "setsockopt"},
-    {0x001300C2, fcntl,                         "fcntl"},
-    {0x00140084, nullptr,                       "poll"},
-    {0x00150042, nullptr,                       "sockatmark"},
-    {0x00160000, gethostid,                     "gethostid"},
-    {0x00170082, nullptr,                       "getsockname"},
-    {0x00180082, nullptr,                       "getpeername"},
+    {0x00110102, nullptr,                       "GetSockOpt"},
+    {0x00120104, nullptr,                       "SetSockOpt"},
+    {0x001300C2, Fcntl,                         "Fcntl"},
+    {0x00140084, nullptr,                       "Poll"},
+    {0x00150042, nullptr,                       "SockAtMark"},
+    {0x00160000, GetHostId,                     "GetHostId"},
+    {0x00170082, nullptr,                       "GetSockName"},
+    {0x00180082, nullptr,                       "GetPeerName"},
     {0x00190000, ShutdownSockets,               "ShutdownSockets"},
     {0x001A00C0, nullptr,                       "GetNetworkOpt"},
     {0x001B0040, nullptr,                       "ICMPSocket"},
