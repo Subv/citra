@@ -2,6 +2,8 @@
 // Licensed under GPLv2 or any later version
 // Refer to the license.txt file included.
 
+#include "common/platform.h"
+
 #if EMU_PLATFORM == PLATFORM_WINDOWS
 #pragma comment(lib, "Ws2_32.lib")
 #include <winsock2.h>
