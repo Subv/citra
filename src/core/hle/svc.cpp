@@ -356,8 +356,15 @@ static s64 GetSystemTick() {
 static Result CreateMemoryBlock(Handle* memblock, u32 addr, u32 size, u32 my_permission,
     u32 other_permission) {
 
+    // TODO(Subv): Do something with size, and verify this behavior
+
+    Handle shared_memory = Kernel::CreateSharedMemory();
+    ResultCode result = Kernel::MapSharedMemory(shared_memory, addr, 
+        static_cast<Kernel::MemoryPermission>(my_permission), 
+        static_cast<Kernel::MemoryPermission>(other_permission));
+    *memblock = shared_memory;
     ERROR_LOG(SVC, "(STUBBED) called addr=0x%08X", addr);
-    return 0;
+    return result.raw;
 }
 
 const HLE::FunctionDef SVC_Table[] = {
