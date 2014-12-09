@@ -46,14 +46,13 @@ static void SOCU_socket(Service::Interface* self) {
         return;
     }
 
-    SOCKET fd = socket(domain, type, protocol);
-    cmd_buffer[2] = fd;
+    cmd_buffer[2] = socket(domain, type, protocol);
     cmd_buffer[1] = 0;
 }
 
 static void SOCU_bind(Service::Interface* self) {
     u32* cmd_buffer = Service::GetCommandBuffer();
-    SOCKET sock = (SOCKET)cmd_buffer[1];
+    u32 sock = cmd_buffer[1];
     u32 len = cmd_buffer[2];
     sockaddr* sock_addr = reinterpret_cast<sockaddr*>(Memory::GetPointer(cmd_buffer[6]));
 #if EMU_PLATFORM != PLATFORM_MACOSX
@@ -66,7 +65,7 @@ static void SOCU_bind(Service::Interface* self) {
 
 static void SOCU_fcntl(Service::Interface* self) {
     u32* cmd_buffer = Service::GetCommandBuffer();
-    SOCKET sock = (SOCKET)cmd_buffer[1];
+    u32 sock = cmd_buffer[1];
     u32 cmd = cmd_buffer[2];
     u32 arg = cmd_buffer[3];
 
@@ -89,7 +88,7 @@ static void SOCU_fcntl(Service::Interface* self) {
 
 static void SOCU_listen(Service::Interface* self) {
     u32* cmd_buffer = Service::GetCommandBuffer();
-    SOCKET sock = (SOCKET)cmd_buffer[1];
+    u32 sock = cmd_buffer[1];
     u32 backlog = cmd_buffer[2];
 
     cmd_buffer[2] = listen(sock, backlog);
@@ -98,7 +97,7 @@ static void SOCU_listen(Service::Interface* self) {
 
 static void SOCU_accept(Service::Interface* self) {
     u32* cmd_buffer = Service::GetCommandBuffer();
-    SOCKET sock = (SOCKET)cmd_buffer[1];
+    u32 sock = cmd_buffer[1];
     int max_addr_len = static_cast<int>(cmd_buffer[2]);
     sockaddr addr;
 
@@ -124,7 +123,7 @@ static void SOCU_gethostid(Service::Interface* self) {
 
 static void SOCU_close(Service::Interface* self) {
     u32* cmd_buffer = Service::GetCommandBuffer();
-    SOCKET sock = (SOCKET)cmd_buffer[1];
+    u32 sock = cmd_buffer[1];
 
 #if EMU_PLATFORM == PLATFORM_WINDOWS
     cmd_buffer[2] = closesocket(sock);
@@ -136,7 +135,7 @@ static void SOCU_close(Service::Interface* self) {
 
 static void SOCU_sendto(Service::Interface* self) {
     u32* cmd_buffer = Service::GetCommandBuffer();
-    SOCKET sock = (SOCKET)cmd_buffer[1];
+    u32 sock = cmd_buffer[1];
     u32 len = cmd_buffer[2];
     u32 flags = cmd_buffer[3];
     u32 addr_len = cmd_buffer[4];
@@ -150,7 +149,7 @@ static void SOCU_sendto(Service::Interface* self) {
 
 static void SOCU_recvfrom(Service::Interface* self) {
     u32* cmd_buffer = Service::GetCommandBuffer();
-    SOCKET sock = (SOCKET)cmd_buffer[1];
+    u32 sock = cmd_buffer[1];
     u32 len = cmd_buffer[2];
     u32 flags = cmd_buffer[3];
     int addr_len = cmd_buffer[4];
