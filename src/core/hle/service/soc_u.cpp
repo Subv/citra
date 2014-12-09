@@ -98,7 +98,7 @@ static void SOCU_listen(Service::Interface* self) {
 static void SOCU_accept(Service::Interface* self) {
     u32* cmd_buffer = Service::GetCommandBuffer();
     u32 sock = cmd_buffer[1];
-    int max_addr_len = static_cast<int>(cmd_buffer[2]);
+    socklen_t max_addr_len = static_cast<socklen_t>(cmd_buffer[2]);
     sockaddr addr;
 
     u32 ret = accept(sock, &addr, &max_addr_len);
@@ -152,7 +152,7 @@ static void SOCU_recvfrom(Service::Interface* self) {
     u32 sock = cmd_buffer[1];
     u32 len = cmd_buffer[2];
     u32 flags = cmd_buffer[3];
-    int addr_len = cmd_buffer[4];
+    socklen_t addr_len = static_cast<socklen_t>(cmd_buffer[4]);
 
     u8* output_buff = Memory::GetPointer(cmd_buffer[0x104 >> 2]);
     sockaddr* src_addr = reinterpret_cast<sockaddr*>(Memory::GetPointer(cmd_buffer[0x1A0 >> 2]));
