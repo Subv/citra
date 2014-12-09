@@ -160,8 +160,23 @@ static void recvfrom(Service::Interface* self) {
     cmd_buffer[1] = 0;
 }
 
+static void InitializeSockets(Service::Interface* self) {
+    // TODO(Subv): Implement
+#if EMU_PLATFORM == PLATFORM_WINDOWS
+    WSADATA data;
+    WSAStartup(MAKEWORD(2, 2), &data);
+#endif // _WIN32
+}
+
+static void ShutdownSockets(Service::Interface* self) {
+    // TODO(Subv): Implement
+#if EMU_PLATFORM == PLATFORM_WINDOWS
+    WSACleanup();
+#endif
+}
+
 const Interface::FunctionInfo FunctionTable[] = {
-    {0x00010044, nullptr,                       "InitializeSockets"},
+    {0x00010044, InitializeSockets,             "InitializeSockets"},
     {0x000200C2, socket,                        "socket"},
     {0x00030082, listen,                        "listen"},
     {0x00040082, accept,                        "accept"},
@@ -184,7 +199,7 @@ const Interface::FunctionInfo FunctionTable[] = {
     {0x00160000, gethostid,                     "gethostid"},
     {0x00170082, nullptr,                       "getsockname"},
     {0x00180082, nullptr,                       "getpeername"},
-    {0x00190000, nullptr,                       "ShutdownSockets"},
+    {0x00190000, ShutdownSockets,               "ShutdownSockets"},
     {0x001A00C0, nullptr,                       "GetNetworkOpt"},
     {0x001B0040, nullptr,                       "ICMPSocket"},
     {0x001C0104, nullptr,                       "ICMPPing"},
@@ -199,16 +214,9 @@ const Interface::FunctionInfo FunctionTable[] = {
 
 Interface::Interface() {
     Register(FunctionTable, ARRAY_SIZE(FunctionTable));
-#if EMU_PLATFORM == PLATFORM_WINDOWS
-    WSADATA data;
-    WSAStartup(MAKEWORD(2, 2), &data);
-#endif // _WIN32
 }
 
 Interface::~Interface() {
-#if EMU_PLATFORM == PLATFORM_WINDOWS
-    WSACleanup();
-#endif
 }
 
 } // namespace
