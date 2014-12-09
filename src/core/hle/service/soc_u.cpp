@@ -5,7 +5,6 @@
 #include "common/platform.h"
 
 #if EMU_PLATFORM == PLATFORM_WINDOWS
-#pragma comment(lib, "Ws2_32.lib")
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #else
