@@ -281,7 +281,7 @@ static void Poll(Service::Interface* self) {
 static void GetSockName(Service::Interface* self) {
     u32* cmd_buffer = Service::GetCommandBuffer();
     u32 socket_handle = cmd_buffer[1];
-    int len = cmd_buffer[2];
+    socklen_t len = cmd_buffer[2];
 
     sockaddr* dest_addr = reinterpret_cast<sockaddr*>(Memory::GetPointer(cmd_buffer[0x104 >> 2]));
 
@@ -306,7 +306,7 @@ static void Shutdown(Service::Interface* self) {
 static void GetPeerName(Service::Interface* self) {
     u32* cmd_buffer = Service::GetCommandBuffer();
     u32 socket_handle = cmd_buffer[1];
-    int len = cmd_buffer[2];
+    socklen_t len = cmd_buffer[2];
 
     sockaddr* dest_addr = reinterpret_cast<sockaddr*>(Memory::GetPointer(cmd_buffer[0x104 >> 2]));
 
