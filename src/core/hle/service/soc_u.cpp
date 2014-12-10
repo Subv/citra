@@ -13,6 +13,7 @@
 #include <netdb.h>
 #include <arpa/inet.h>
 #include <fcntl.h>
+#include <poll.h>
 #endif
 
 #include "common/log.h"
@@ -23,6 +24,13 @@
 // Namespace SOC_U
 
 namespace SOC_U {
+
+/// Structure to represent the 3ds' pollfd structure, which is different than most implementations
+struct hw_pollfd {
+    u32 fd; ///< Socket handle
+    u32 events; ///< Events to poll for (input)
+    u32 revents; ///< Events received (output)
+};
 
 static void Socket(Service::Interface* self) {
     u32* cmd_buffer = Service::GetCommandBuffer();
@@ -102,6 +110,11 @@ static void Accept(Service::Interface* self) {
 
     u32 ret = ::accept(socket_handle, &addr, &max_addr_len);
     
+#if EMU_PLATFORM != PLATFORM_MACOSX
+    // OS X uses the first byte for the struct length, Windows doesn't
+    addr.sa_family = (addr.sa_family << 8) | max_addr_len;
+#endif
+
     // TODO(Subv): Write addr to the pointer located at cmd_buffer[0x104 >> 2]
 
     cmd_buffer[2] = ret;
@@ -143,6 +156,10 @@ static void SendTo(Service::Interface* self) {
     sockaddr* dest_addr = reinterpret_cast<sockaddr*>(Memory::GetPointer(cmd_buffer[10]));
 
     cmd_buffer[2] = ::sendto(socket_handle, (const char*)input_buff, len, flags, dest_addr, addr_len);
+#if EMU_PLATFORM != PLATFORM_MACOSX
+    // OS X uses the first byte for the struct length, Windows doesn't
+    dest_addr->sa_family = (dest_addr->sa_family << 8) | addr_len;
+#endif
     cmd_buffer[1] = 0;
 }
 
@@ -157,7 +174,89 @@ static void RecvFrom(Service::Interface* self) {
     sockaddr* src_addr = reinterpret_cast<sockaddr*>(Memory::GetPointer(cmd_buffer[0x1A0 >> 2]));
 
     cmd_buffer[2] = ::recvfrom(socket_handle, (char*)output_buff, len, flags, src_addr, &addr_len);
+#if EMU_PLATFORM != PLATFORM_MACOSX
+    // OS X uses the first byte for the struct length, Windows doesn't
+    src_addr->sa_family = (src_addr->sa_family << 8) | addr_len;
+#endif
     cmd_buffer[1] = 0;
+}
+
+/// Translates the resulting events of a Poll operation from platform-specific to 3ds specific
+static u32 translate_poll_event_3ds(u32 input_event) {
+#if EMU_PLATFORM == PLATFORM_WINDOWS
+    u32 ret = 0;
+    if (input_event & POLLIN)
+        ret |= 1;
+    if (input_event & POLLOUT)
+        ret |= 2;
+    if (input_event & POLLERR)
+        ret |= 8;
+    if (input_event & POLLHUP)
+        ret |= 0x10;
+    if (input_event & POLLNVAL)
+        ret |= 0x20;
+    return ret;
+#else
+    return input_event;
+#endif
+}
+
+/// Translates the resulting events of a Poll operation from 3ds specific to platform specific
+static u32 translate_poll_event_platform(u32 input_event) {
+#if EMU_PLATFORM == PLATFORM_WINDOWS
+    u32 ret = 0;
+    if (input_event & 1)
+        ret |= POLLIN;
+    if (input_event & 2)
+        ret |= POLLOUT;
+    // POLLPRI is not supported by Windows
+
+    if (input_event & 8)
+        ret |= POLLERR;
+    if (input_event & 0x10)
+        ret |= POLLHUP;
+    if (input_event & 0x20)
+        ret |= POLLNVAL;
+    return ret;
+#else
+    return input_event;
+#endif
+}
+
+static void Poll(Service::Interface* self) {
+    u32* cmd_buffer = Service::GetCommandBuffer();
+    u32 nfds = cmd_buffer[1];
+    int timeout = cmd_buffer[2];
+    hw_pollfd* input_fds = reinterpret_cast<hw_pollfd*>(Memory::GetPointer(cmd_buffer[6]));
+    hw_pollfd* output_fds = reinterpret_cast<hw_pollfd*>(Memory::GetPointer(cmd_buffer[0x104 >> 2]));
+
+    // The 3ds_pollfd and the pollfd structures may be different (Windows/Linux have different sizes)
+    // so we have to copy the data
+    pollfd* platform_pollfd = new pollfd[nfds];
+    for (int current_fds = 0; current_fds < nfds; ++current_fds) {
+        platform_pollfd[current_fds].fd = input_fds[current_fds].fd;
+        platform_pollfd[current_fds].events = translate_poll_event_platform(input_fds[current_fds].events);
+        platform_pollfd[current_fds].revents = translate_poll_event_platform(input_fds[current_fds].revents);
+    }
+    
+    int ret;
+#if EMU_PLATFORM == PLATFORM_WINDOWS
+    ret = WSAPoll(platform_pollfd, nfds, timeout);
+#else
+    ret = ::poll(platform_pollfd, nfds, timeout);
+#endif
+
+    // Now update the output pollfd structure
+    for (int current_fds = 0; current_fds < nfds; ++current_fds) {
+        output_fds[current_fds].fd = platform_pollfd[current_fds].fd;
+        output_fds[current_fds].events = translate_poll_event_3ds(platform_pollfd[current_fds].events);
+        output_fds[current_fds].revents = translate_poll_event_3ds(platform_pollfd[current_fds].revents);
+    }
+
+    delete[] platform_pollfd;
+
+    cmd_buffer[1] = 0;
+    cmd_buffer[2] = ret;
 }
 
 static void InitializeSockets(Service::Interface* self) {
@@ -166,6 +265,9 @@ static void InitializeSockets(Service::Interface* self) {
     WSADATA data;
     WSAStartup(MAKEWORD(2, 2), &data);
 #endif // _WIN32
+
+    u32* cmd_buffer = Service::GetCommandBuffer();
+    cmd_buffer[1] = 0;
 }
 
 static void ShutdownSockets(Service::Interface* self) {
@@ -173,6 +275,9 @@ static void ShutdownSockets(Service::Interface* self) {
 #if EMU_PLATFORM == PLATFORM_WINDOWS
     WSACleanup();
 #endif
+
+    u32* cmd_buffer = Service::GetCommandBuffer();
+    cmd_buffer[1] = 0;
 }
 
 const Interface::FunctionInfo FunctionTable[] = {
@@ -194,7 +299,7 @@ const Interface::FunctionInfo FunctionTable[] = {
     {0x00110102, nullptr,                       "GetSockOpt"},
     {0x00120104, nullptr,                       "SetSockOpt"},
     {0x001300C2, Fcntl,                         "Fcntl"},
-    {0x00140084, nullptr,                       "Poll"},
+    {0x00140084, Poll,                          "Poll"},
     {0x00150042, nullptr,                       "SockAtMark"},
     {0x00160000, GetHostId,                     "GetHostId"},
     {0x00170082, nullptr,                       "GetSockName"},
