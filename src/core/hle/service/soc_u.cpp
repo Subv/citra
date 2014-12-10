@@ -8,6 +8,10 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <unordered_map>
+
+#define WSAEAGAIN    WSAEWOULDBLOCK
+#define ERRNO(x)  WSA##x
+#define GET_ERRNO WSAGetLastError()
 #else
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -15,7 +19,12 @@
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <poll.h>
+
+#define ERRNO(x)  x
+#define GET_ERRNO errno
 #endif
+
+#define SOCKET_ERROR_VALUE (-1)
 
 #include "common/log.h"
 #include "core/hle/hle.h"
@@ -25,6 +34,109 @@
 // Namespace SOC_U
 
 namespace SOC_U {
+
+struct ErrorMap {
+    int from;
+    int to;
+};
+
+#if EMU_PLATFORM != PLATFORM_WINDOWS
+static const u32 error_map_size = 77;
+#else
+static const u32 error_map_size = 76;
+#endif
+
+static std::array<ErrorMap, error_map_size> error_map = { {
+    { E2BIG, 1 },
+    { ERRNO(EACCES), 2 },
+    { ERRNO(EADDRINUSE), 3 },
+    { ERRNO(EADDRNOTAVAIL), 4 },
+    { ERRNO(EAFNOSUPPORT), 5 },
+    { ERRNO(EAGAIN), 6 },
+    { ERRNO(EALREADY), 7 },
+    { ERRNO(EBADF), 8 },
+    { EBADMSG, 9 },
+    { EBUSY, 10 },
+    { ECANCELED, 11 },
+    { ECHILD, 12 },
+    { ERRNO(ECONNABORTED), 13 },
+    { ERRNO(ECONNREFUSED), 14 },
+    { ERRNO(ECONNRESET), 15 },
+    { EDEADLK, 16 },
+    { ERRNO(EDESTADDRREQ), 17 },
+    { EDOM, 18 },
+    { ERRNO(EDQUOT), 19 },
+    { EEXIST, 20 },
+    { ERRNO(EFAULT), 21 },
+    { EFBIG, 22 },
+    { ERRNO(EHOSTUNREACH), 23 },
+    { EIDRM, 24 },
+    { EILSEQ, 25 },
+    { ERRNO(EINPROGRESS), 26 },
+    { ERRNO(EINTR), 27 },
+    { ERRNO(EINVAL), 28 },
+    { EIO, 29 },
+    { ERRNO(EISCONN), 30 },
+    { EISDIR, 31 },
+    { ERRNO(ELOOP), 32 },
+    { ERRNO(EMFILE), 33 },
+    { EMLINK, 34 },
+    { ERRNO(EMSGSIZE), 35 },
+#if EMU_PLATFORM != PLATFORM_WINDOWS
+    { ERRNO(EMULTIHOP), 36 },
+#endif
+    { ERRNO(ENAMETOOLONG), 37 },
+    { ERRNO(ENETDOWN), 38 },
+    { ERRNO(ENETRESET), 39 },
+    { ERRNO(ENETUNREACH), 40 },
+    { ENFILE, 41 },
+    { ERRNO(ENOBUFS), 42 },
+    { ENODATA, 43 },
+    { ENODEV, 44 },
+    { ENOENT, 45 },
+    { ENOEXEC, 46 },
+    { ENOLCK, 47 },
+    { ENOLINK, 48 },
+    { ENOMEM, 49 },
+    { ENOMSG, 50 },
+    { ERRNO(ENOPROTOOPT), 51 },
+    { ENOSPC, 52 },
+    { ENOSR, 53 },
+    { ENOSTR, 54 },
+    { ENOSYS, 55 },
+    { ERRNO(ENOTCONN), 56 },
+    { ENOTDIR, 57 },
+    { ERRNO(ENOTEMPTY), 58 },
+    { ERRNO(ENOTSOCK), 59 },
+    { ENOTSUP, 60 },
+    { ENOTTY, 61 },
+    { ENXIO, 62 },
+    { ERRNO(EOPNOTSUPP), 63 },
+    { EOVERFLOW, 64 },
+    { EPERM, 65 },
+    { EPIPE, 66 },
+    { EPROTO, 67 },
+    { ERRNO(EPROTONOSUPPORT), 68 },
+    { ERRNO(EPROTOTYPE), 69 },
+    { ERANGE, 70 },
+    { EROFS, 71 },
+    { ESPIPE, 72 },
+    { ESRCH, 73 },
+    { ERRNO(ESTALE), 74 },
+    { ETIME, 75 },
+    { ERRNO(ETIMEDOUT), 76 }
+}};
+
+static int TranslateError(int error) {
+    auto found = std::find_if(error_map.begin(), error_map.end(), [error](ErrorMap const& eqivalence) {
+        return eqivalence.from == error; 
+    });
+
+    if (found != error_map.end())
+        return -found->to;
+    
+    return error;
+}
 
 /// Structure to represent the 3ds' pollfd structure, which is different than most implementations
 struct hw_pollfd {
@@ -63,8 +175,12 @@ static void Socket(Service::Interface* self) {
     u32 socket_handle = ::socket(domain, type, protocol);
 
 #if EMU_PLATFORM == PLATFORM_WINDOWS
-    socket_blocking[socket_handle] = true;
+    if (socket_handle != SOCKET_ERROR_VALUE)
+        socket_blocking[socket_handle] = true;
 #endif
+
+    if (socket_handle == SOCKET_ERROR_VALUE)
+        socket_handle = TranslateError(GET_ERRNO);
 
     cmd_buffer[2] = socket_handle;
     cmd_buffer[1] = 0;
@@ -80,7 +196,12 @@ static void Bind(Service::Interface* self) {
     if (sock_addr != nullptr)
         sock_addr->sa_family >>= 8;
 #endif
-    cmd_buffer[2] = ::bind(socket_handle, sock_addr, sizeof(sockaddr_in));
+    int res = ::bind(socket_handle, sock_addr, len == 8 ? sizeof(sockaddr_in) : sizeof(sockaddr_in6));
+    
+    if (res != 0)
+        res = TranslateError(GET_ERRNO);
+
+    cmd_buffer[2] = res;
     cmd_buffer[1] = 0;
 }
 
@@ -98,15 +219,24 @@ static void Fcntl(Service::Interface* self) {
         cmd = FIONBIO;
         arg = 1;
         ret = ioctlsocket(socket_handle, cmd, reinterpret_cast<u_long*>(&arg));
+
+        if (ret != 0)
+            ret = TranslateError(GET_ERRNO);
+
         socket_blocking[socket_handle] = false;
     } else if (cmd == 3) {
         // 3 is F_GETFL, this is used to check if a socket is nonblocking
         // Return O_NONBLOCK (4) if the socket is nonblocking
-        ret = socket_blocking[socket_handle] ? 0 : 4;
+        if (socket_blocking.find(socket_handle) != socket_blocking.end())
+            ret = socket_blocking[socket_handle] ? 0 : 4;
+        else
+            ret = 0; // A socket is blocking by default
     }
 #else
     ret = ::fcntl(socket_handle, cmd, arg);
-#endif // _WIN32
+    if (ret != 0)
+        ret = TranslateError(GET_ERRNO);
+#endif
 
     cmd_buffer[2] = ret;
     cmd_buffer[1] = 0;
@@ -117,7 +247,11 @@ static void Listen(Service::Interface* self) {
     u32 socket_handle = cmd_buffer[1];
     u32 backlog = cmd_buffer[2];
 
-    cmd_buffer[2] = ::listen(socket_handle, backlog);
+    int ret = ::listen(socket_handle, backlog);
+    if (ret != 0)
+        ret = TranslateError(GET_ERRNO);
+
+    cmd_buffer[2] = ret;
     cmd_buffer[1] = 0;
 }
 
@@ -127,7 +261,7 @@ static void Accept(Service::Interface* self) {
     socklen_t max_addr_len = static_cast<socklen_t>(cmd_buffer[2]);
     sockaddr addr;
 
-    u32 ret = ::accept(socket_handle, &addr, &max_addr_len);
+    int ret = ::accept(socket_handle, &addr, &max_addr_len);
     
 #if EMU_PLATFORM != PLATFORM_MACOSX
     // OS X uses the first byte for the struct length, Windows doesn't
@@ -135,9 +269,12 @@ static void Accept(Service::Interface* self) {
 #endif
 
 #if EMU_PLATFORM == PLATFORM_WINDOWS
-    if (ret != SOCKET_ERROR)
+    if (ret != SOCKET_ERROR_VALUE)
         socket_blocking[ret] = true;
 #endif
+    
+    if (ret == SOCKET_ERROR_VALUE)
+        ret = TranslateError(GET_ERRNO);
 
     Memory::WriteBlock(cmd_buffer[0x104 >> 2], reinterpret_cast<const u8*>(&addr), max_addr_len);
     cmd_buffer[2] = ret;
@@ -160,12 +297,17 @@ static void Close(Service::Interface* self) {
     u32* cmd_buffer = Service::GetCommandBuffer();
     u32 socket_handle = cmd_buffer[1];
 
+    int ret = 0;
 #if EMU_PLATFORM == PLATFORM_WINDOWS
-    cmd_buffer[2] = ::closesocket(socket_handle);
+    ret = ::closesocket(socket_handle);
     socket_blocking.erase(socket_handle);
 #else
-    cmd_buffer[2] = ::close(socket_handle);
+    ret = ::close(socket_handle);
 #endif
+
+    if (ret != 0)
+        ret = TranslateError(GET_ERRNO);
+    cmd_buffer[2] = ret;
     cmd_buffer[1] = 0;
 }
 
@@ -179,11 +321,16 @@ static void SendTo(Service::Interface* self) {
     u8* input_buff = Memory::GetPointer(cmd_buffer[8]);
     sockaddr* dest_addr = reinterpret_cast<sockaddr*>(Memory::GetPointer(cmd_buffer[10]));
 
-    cmd_buffer[2] = ::sendto(socket_handle, (const char*)input_buff, len, flags, dest_addr, addr_len);
+    int ret = ::sendto(socket_handle, (const char*)input_buff, len, flags, dest_addr, addr_len);
 #if EMU_PLATFORM != PLATFORM_MACOSX
     // OS X uses the first byte for the struct length, Windows doesn't
     dest_addr->sa_family = (dest_addr->sa_family << 8) | addr_len;
 #endif
+
+    if (ret == SOCKET_ERROR_VALUE)
+        ret = TranslateError(GET_ERRNO);
+
+    cmd_buffer[2] = ret;
     cmd_buffer[1] = 0;
 }
 
@@ -197,12 +344,17 @@ static void RecvFrom(Service::Interface* self) {
     u8* output_buff = Memory::GetPointer(cmd_buffer[0x104 >> 2]);
     sockaddr* src_addr = reinterpret_cast<sockaddr*>(Memory::GetPointer(cmd_buffer[0x1A0 >> 2]));
 
-    cmd_buffer[2] = ::recvfrom(socket_handle, (char*)output_buff, len, flags, src_addr, &addr_len);
+    int ret = ::recvfrom(socket_handle, (char*)output_buff, len, flags, src_addr, &addr_len);
 #if EMU_PLATFORM != PLATFORM_MACOSX
     // OS X uses the first byte for the struct length, Windows doesn't
     if (src_addr != nullptr)
         src_addr->sa_family = (src_addr->sa_family << 8) | addr_len;
 #endif
+
+    if (ret == SOCKET_ERROR_VALUE)
+        ret = TranslateError(GET_ERRNO);
+
+    cmd_buffer[2] = ret;
     cmd_buffer[1] = 0;
 }
 
@@ -274,6 +426,9 @@ static void Poll(Service::Interface* self) {
 
     delete[] platform_pollfd;
 
+    if (ret == SOCKET_ERROR_VALUE)
+        ret = TranslateError(GET_ERRNO);
+
     cmd_buffer[1] = 0;
     cmd_buffer[2] = ret;
 }
@@ -285,12 +440,17 @@ static void GetSockName(Service::Interface* self) {
 
     sockaddr* dest_addr = reinterpret_cast<sockaddr*>(Memory::GetPointer(cmd_buffer[0x104 >> 2]));
 
-    cmd_buffer[2] = ::getsockname(socket_handle, dest_addr, &len);
+    int ret = ::getsockname(socket_handle, dest_addr, &len);
 #if EMU_PLATFORM != PLATFORM_MACOSX
     // OS X uses the first byte for the struct length, Windows doesn't
     if (dest_addr != nullptr)
         dest_addr->sa_family = (dest_addr->sa_family << 8) | len;
 #endif
+
+    if (ret != 0)
+        ret = TranslateError(GET_ERRNO);
+
+    cmd_buffer[2] = ret;
     cmd_buffer[1] = 0;
 }
 
@@ -299,7 +459,10 @@ static void Shutdown(Service::Interface* self) {
     u32 socket_handle = cmd_buffer[1];
     int how = cmd_buffer[2];
 
-    cmd_buffer[2] = ::shutdown(socket_handle, how);
+    int ret = ::shutdown(socket_handle, how);
+    if (ret != 0)
+        ret = TranslateError(GET_ERRNO);
+    cmd_buffer[2] = ret;
     cmd_buffer[1] = 0;
 }
 
@@ -310,12 +473,17 @@ static void GetPeerName(Service::Interface* self) {
 
     sockaddr* dest_addr = reinterpret_cast<sockaddr*>(Memory::GetPointer(cmd_buffer[0x104 >> 2]));
 
-    cmd_buffer[2] = ::getpeername(socket_handle, dest_addr, &len);
+    int ret = ::getpeername(socket_handle, dest_addr, &len);
 #if EMU_PLATFORM != PLATFORM_MACOSX
     // OS X uses the first byte for the struct length, Windows doesn't
     if (dest_addr != nullptr)
         dest_addr->sa_family = (dest_addr->sa_family << 8) | len;
 #endif
+
+    if (ret != 0)
+        ret = TranslateError(GET_ERRNO);
+
+    cmd_buffer[2] = ret;
     cmd_buffer[1] = 0;
 }
 
@@ -326,12 +494,15 @@ static void Connect(Service::Interface* self) {
 
     sockaddr* input_addr = reinterpret_cast<sockaddr*>(Memory::GetPointer(cmd_buffer[6]));
 
-    cmd_buffer[2] = ::connect(socket_handle, input_addr, len);
+    int ret = ::connect(socket_handle, input_addr, len);
 #if EMU_PLATFORM != PLATFORM_MACOSX
     // OS X uses the first byte for the struct length, Windows doesn't
     if (input_addr != nullptr)
         input_addr->sa_family = (input_addr->sa_family << 8) | len;
 #endif
+    if (ret != 0)
+        ret = TranslateError(GET_ERRNO);
+    cmd_buffer[2] = ret;
     cmd_buffer[1] = 0;
 }
 
