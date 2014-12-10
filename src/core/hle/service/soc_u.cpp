@@ -46,7 +46,7 @@ static const u32 error_map_size = 77;
 static const u32 error_map_size = 76;
 #endif
 
-static std::array<ErrorMap, error_map_size> error_map = { {
+static const std::array<ErrorMap, error_map_size> error_map = { {
     { E2BIG, 1 },
     { ERRNO(EACCES), 2 },
     { ERRNO(EADDRINUSE), 3 },
@@ -127,6 +127,7 @@ static std::array<ErrorMap, error_map_size> error_map = { {
     { ERRNO(ETIMEDOUT), 76 }
 }};
 
+/// Converts a network error from platform-specific to 3ds-specific
 static int TranslateError(int error) {
     auto found = std::find_if(error_map.begin(), error_map.end(), [error](ErrorMap const& eqivalence) {
         return eqivalence.from == error; 
