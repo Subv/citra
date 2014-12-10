@@ -207,16 +207,16 @@ static void RecvFrom(Service::Interface* self) {
 }
 
 /// Translates the resulting events of a Poll operation from platform-specific to 3ds specific
-static u32 translate_poll_event_3ds(u32 input_event) {
+static u32 TranslatePollEvent3DS(u32 input_event) {
     u32 ret = 0;
     if (input_event & POLLIN)
-        ret |= 1;
+        ret |= 0x01;
     if (input_event & POLLPRI)
-        ret |= 2;
+        ret |= 0x02;
     if (input_event & POLLHUP)
-        ret |= 4;
+        ret |= 0x04;
     if (input_event & POLLERR)
-        ret |= 8;
+        ret |= 0x08;
     if (input_event & POLLOUT)
         ret |= 0x10;
     if (input_event & POLLNVAL)
@@ -225,15 +225,15 @@ static u32 translate_poll_event_3ds(u32 input_event) {
 }
 
 /// Translates the resulting events of a Poll operation from 3ds specific to platform specific
-static u32 translate_poll_event_platform(u32 input_event) {
+static u32 TranslatePollEventPlatform(u32 input_event) {
     u32 ret = 0;
-    if (input_event & 1)
+    if (input_event & 0x01)
         ret |= POLLIN;
-    if (input_event & 2)
+    if (input_event & 0x02)
         ret |= POLLPRI;
-    if (input_event & 4)
+    if (input_event & 0x04)
         ret |= POLLHUP;
-    if (input_event & 8)
+    if (input_event & 0x08)
         ret |= POLLERR;
     if (input_event & 0x10)
         ret |= POLLOUT;
@@ -254,8 +254,8 @@ static void Poll(Service::Interface* self) {
     pollfd* platform_pollfd = new pollfd[nfds];
     for (int current_fds = 0; current_fds < nfds; ++current_fds) {
         platform_pollfd[current_fds].fd = input_fds[current_fds].fd;
-        platform_pollfd[current_fds].events = translate_poll_event_platform(input_fds[current_fds].events);
-        platform_pollfd[current_fds].revents = translate_poll_event_platform(input_fds[current_fds].revents);
+        platform_pollfd[current_fds].events = TranslatePollEventPlatform(input_fds[current_fds].events);
+        platform_pollfd[current_fds].revents = TranslatePollEventPlatform(input_fds[current_fds].revents);
     }
     
     int ret;
@@ -268,8 +268,8 @@ static void Poll(Service::Interface* self) {
     // Now update the output pollfd structure
     for (int current_fds = 0; current_fds < nfds; ++current_fds) {
         output_fds[current_fds].fd = platform_pollfd[current_fds].fd;
-        output_fds[current_fds].events = translate_poll_event_3ds(platform_pollfd[current_fds].events);
-        output_fds[current_fds].revents = translate_poll_event_3ds(platform_pollfd[current_fds].revents);
+        output_fds[current_fds].events = TranslatePollEvent3DS(platform_pollfd[current_fds].events);
+        output_fds[current_fds].revents = TranslatePollEvent3DS(platform_pollfd[current_fds].revents);
     }
 
     delete[] platform_pollfd;
