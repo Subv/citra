@@ -208,44 +208,38 @@ static void RecvFrom(Service::Interface* self) {
 
 /// Translates the resulting events of a Poll operation from platform-specific to 3ds specific
 static u32 translate_poll_event_3ds(u32 input_event) {
-#if EMU_PLATFORM == PLATFORM_WINDOWS
     u32 ret = 0;
     if (input_event & POLLIN)
         ret |= 1;
-    if (input_event & POLLOUT)
+    if (input_event & POLLPRI)
         ret |= 2;
+    if (input_event & POLLHUP)
+        ret |= 4;
     if (input_event & POLLERR)
         ret |= 8;
-    if (input_event & POLLHUP)
+    if (input_event & POLLOUT)
         ret |= 0x10;
     if (input_event & POLLNVAL)
         ret |= 0x20;
     return ret;
-#else
-    return input_event;
-#endif
 }
 
 /// Translates the resulting events of a Poll operation from 3ds specific to platform specific
 static u32 translate_poll_event_platform(u32 input_event) {
-#if EMU_PLATFORM == PLATFORM_WINDOWS
     u32 ret = 0;
     if (input_event & 1)
         ret |= POLLIN;
     if (input_event & 2)
-        ret |= POLLOUT;
-    // POLLPRI is not supported by Windows
-
+        ret |= POLLPRI;
+    if (input_event & 4)
+        ret |= POLLHUP;
     if (input_event & 8)
         ret |= POLLERR;
     if (input_event & 0x10)
-        ret |= POLLHUP;
+        ret |= POLLOUT;
     if (input_event & 0x20)
         ret |= POLLNVAL;
     return ret;
-#else
-    return input_event;
-#endif
 }
 
 static void Poll(Service::Interface* self) {
