@@ -8,10 +8,6 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <unordered_map>
-
-#define WSAEAGAIN    WSAEWOULDBLOCK
-#define ERRNO(x)  WSA##x
-#define GET_ERRNO WSAGetLastError()
 #else
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -19,26 +15,28 @@
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <poll.h>
-
-#define ERRNO(x)  x
-#define GET_ERRNO errno
 #endif
-
-#define SOCKET_ERROR_VALUE (-1)
 
 #include "common/log.h"
 #include "core/hle/hle.h"
 #include "core/hle/service/soc_u.h"
 
+#define SOCKET_ERROR_VALUE (-1)
+
+#if EMU_PLATFORM == PLATFORM_WINDOWS
+#define WSAEAGAIN    WSAEWOULDBLOCK
+#define ERRNO(x)  WSA##x
+#define GET_ERRNO WSAGetLastError()
+#define poll(x, y, z) WSAPoll(x, y, z);
+#else
+#define ERRNO(x)  x
+#define GET_ERRNO errno
+#endif
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // Namespace SOC_U
 
 namespace SOC_U {
-
-struct ErrorMap {
-    int from;
-    int to;
-};
 
 #if EMU_PLATFORM != PLATFORM_WINDOWS
 static const u32 error_map_size = 77;
@@ -46,7 +44,8 @@ static const u32 error_map_size = 77;
 static const u32 error_map_size = 76;
 #endif
 
-static const std::array<ErrorMap, error_map_size> error_map = { {
+/// Holds the translation from system network errors to 3DS network errors
+static const std::array<std::pair<int, int>, error_map_size> error_map = { {
     { E2BIG, 1 },
     { ERRNO(EACCES), 2 },
     { ERRNO(EADDRINUSE), 3 },
@@ -129,21 +128,137 @@ static const std::array<ErrorMap, error_map_size> error_map = { {
 
 /// Converts a network error from platform-specific to 3ds-specific
 static int TranslateError(int error) {
-    auto found = std::find_if(error_map.begin(), error_map.end(), [error](ErrorMap const& eqivalence) {
-        return eqivalence.from == error; 
+    auto found = std::find_if(error_map.begin(), error_map.end(), [error](std::pair<int, int> const& eqivalence) {
+        return eqivalence.first == error; 
     });
 
     if (found != error_map.end())
-        return -found->to;
+        return -found->second;
     
     return error;
 }
 
 /// Structure to represent the 3ds' pollfd structure, which is different than most implementations
-struct hw_pollfd {
+struct CTRPollFD {
     u32 fd; ///< Socket handle
     u32 events; ///< Events to poll for (input)
     u32 revents; ///< Events received (output)
+
+    /// Translates the resulting events of a Poll operation from platform-specific to 3ds specific
+    static u32 TranslatePollEventTo3DS(u32 input_event) {
+        u32 ret = 0;
+        if (input_event & POLLIN)
+            ret |= 0x01;
+        if (input_event & POLLPRI)
+            ret |= 0x02;
+        if (input_event & POLLHUP)
+            ret |= 0x04;
+        if (input_event & POLLERR)
+            ret |= 0x08;
+        if (input_event & POLLOUT)
+            ret |= 0x10;
+        if (input_event & POLLNVAL)
+            ret |= 0x20;
+        return ret;
+    }
+
+    /// Translates the resulting events of a Poll operation from 3ds specific to platform specific
+    static u32 TranslatePollEventToPlatform(u32 input_event) {
+        u32 ret = 0;
+        if (input_event & 0x01)
+            ret |= POLLIN;
+        if (input_event & 0x02)
+            ret |= POLLPRI;
+        if (input_event & 0x04)
+            ret |= POLLHUP;
+        if (input_event & 0x08)
+            ret |= POLLERR;
+        if (input_event & 0x10)
+            ret |= POLLOUT;
+        if (input_event & 0x20)
+            ret |= POLLNVAL;
+        return ret;
+    }
+
+    /// Converts a platform-specific pollfd to a 3ds specific structure
+    static CTRPollFD FromPlatform(pollfd const& fd) {
+        CTRPollFD result;
+        result.events = TranslatePollEventTo3DS(fd.events);
+        result.revents = TranslatePollEventTo3DS(fd.revents);
+        result.fd = static_cast<u32>(fd.fd);
+        return result;
+    }
+
+    /// Converts a 3ds specific pollfd to a platform-specific structure
+    static pollfd ToPlatform(CTRPollFD const& fd) {
+        pollfd result;
+        result.events = TranslatePollEventToPlatform(fd.events);
+        result.revents = TranslatePollEventToPlatform(fd.revents);
+        result.fd = fd.fd;
+        return result;
+    }
+};
+
+/// Union to represent the 3ds' sockaddr structure
+union CTRSockAddr {
+    /// Structure to represent a raw sockaddr
+    struct {
+        u8 len; ///< The length of the entire structure, only the set fields count
+        u8 sa_family; ///< The address family of the sockaddr
+        u8 sa_data[0x1A]; ///< The extra data, this varies, depending on the address family
+    } raw;
+
+    /// Structure to represent the 3ds' sockaddr_in structure
+    struct CTRSockAddrIn {
+        u8 len; ///< The length of the entire structure
+        u8 sin_family; ///< The address family of the sockaddr_in
+        u16 sin_port; ///< The port associated with this sockaddr_in
+        u32 sin_addr; ///< The actual address of the sockaddr_in
+    } in;
+
+    /// Convert a 3DS CTRSockAddr to a platform-specific sockaddr
+    static sockaddr ToPlatform(CTRSockAddr const& ctr_addr) {
+        sockaddr result;
+        result.sa_family = ctr_addr.raw.sa_family;
+        memset(result.sa_data, 0, sizeof(result.sa_data));
+
+        // We can not guarantee ABI compatibility between platforms so we copy the fields manually
+        switch (result.sa_family) {
+            case AF_INET:
+            {
+                sockaddr_in* result_in = reinterpret_cast<sockaddr_in*>(&result);
+                result_in->sin_port = ctr_addr.in.sin_port;
+                result_in->sin_addr.s_addr = ctr_addr.in.sin_addr;
+                memset(result_in->sin_zero, 0, sizeof(result_in->sin_zero));
+                break;
+            }
+            default:
+                _dbg_assert_msg_(HLE, false, "Unhandled address family (sa_family) in CTRSockAddr::ToPlatform");
+                break;
+        }
+        return result;
+    }
+
+    /// Convert a platform-specific sockaddr to a 3DS CTRSockAddr
+    static CTRSockAddr FromPlatform(sockaddr const& addr) {
+        CTRSockAddr result;
+        result.raw.sa_family = static_cast<u8>(addr.sa_family);
+        // We can not guarantee ABI compatibility between platforms so we copy the fields manually
+        switch (result.raw.sa_family) {
+            case AF_INET:
+            {
+                sockaddr_in const* addr_in = reinterpret_cast<sockaddr_in const*>(&addr);
+                result.raw.len = sizeof(CTRSockAddrIn);
+                result.in.sin_port = addr_in->sin_port;
+                result.in.sin_addr = addr_in->sin_addr.s_addr;
+                break;
+            }
+            default:
+                _dbg_assert_msg_(HLE, false, "Unhandled address family (sa_family) in CTRSockAddr::ToPlatform");
+                break;
+        }
+        return result;
+    }
 };
 
 #if EMU_PLATFORM == PLATFORM_WINDOWS
@@ -173,7 +288,7 @@ static void Socket(Service::Interface* self) {
         return;
     }
 
-    u32 socket_handle = ::socket(domain, type, protocol);
+    u32 socket_handle = static_cast<u32>(::socket(domain, type, protocol));
 
 #if EMU_PLATFORM == PLATFORM_WINDOWS
     if (socket_handle != SOCKET_ERROR_VALUE)
@@ -191,13 +306,16 @@ static void Bind(Service::Interface* self) {
     u32* cmd_buffer = Service::GetCommandBuffer();
     u32 socket_handle = cmd_buffer[1];
     u32 len = cmd_buffer[2];
-    sockaddr* sock_addr = reinterpret_cast<sockaddr*>(Memory::GetPointer(cmd_buffer[6]));
-#if EMU_PLATFORM != PLATFORM_MACOSX
-    // OS X uses the first byte for the struct length, Windows doesn't
-    if (sock_addr != nullptr)
-        sock_addr->sa_family >>= 8;
-#endif
-    int res = ::bind(socket_handle, sock_addr, len == 8 ? sizeof(sockaddr_in) : sizeof(sockaddr_in6));
+    CTRSockAddr* ctr_sock_addr = reinterpret_cast<CTRSockAddr*>(Memory::GetPointer(cmd_buffer[6]));
+
+    if (ctr_sock_addr == nullptr) {
+        cmd_buffer[1] = -1; // TODO(Subv): Correct code
+        return;
+    }
+
+    sockaddr sock_addr = CTRSockAddr::ToPlatform(*ctr_sock_addr);
+
+    int res = ::bind(socket_handle, &sock_addr, std::max<u32>(sizeof(sock_addr), len));
     
     if (res != 0)
         res = TranslateError(GET_ERRNO);
@@ -262,22 +380,19 @@ static void Accept(Service::Interface* self) {
     socklen_t max_addr_len = static_cast<socklen_t>(cmd_buffer[2]);
     sockaddr addr;
 
-    int ret = ::accept(socket_handle, &addr, &max_addr_len);
+    u32 ret = static_cast<u32>(::accept(socket_handle, &addr, &max_addr_len));
     
-#if EMU_PLATFORM != PLATFORM_MACOSX
-    // OS X uses the first byte for the struct length, Windows doesn't
-    addr.sa_family = (addr.sa_family << 8) | max_addr_len;
-#endif
-
 #if EMU_PLATFORM == PLATFORM_WINDOWS
     if (ret != SOCKET_ERROR_VALUE)
         socket_blocking[ret] = true;
 #endif
-    
+
     if (ret == SOCKET_ERROR_VALUE)
         ret = TranslateError(GET_ERRNO);
 
-    Memory::WriteBlock(cmd_buffer[0x104 >> 2], reinterpret_cast<const u8*>(&addr), max_addr_len);
+    CTRSockAddr ctr_addr = CTRSockAddr::FromPlatform(addr);
+    Memory::WriteBlock(cmd_buffer[0x104 >> 2], (const u8*)&ctr_addr, max_addr_len);
+
     cmd_buffer[2] = ret;
     cmd_buffer[1] = 0;
 }
@@ -320,13 +435,16 @@ static void SendTo(Service::Interface* self) {
     u32 addr_len = cmd_buffer[4];
 
     u8* input_buff = Memory::GetPointer(cmd_buffer[8]);
-    sockaddr* dest_addr = reinterpret_cast<sockaddr*>(Memory::GetPointer(cmd_buffer[10]));
+    CTRSockAddr* ctr_dest_addr = reinterpret_cast<CTRSockAddr*>(Memory::GetPointer(cmd_buffer[10]));
 
-    int ret = ::sendto(socket_handle, (const char*)input_buff, len, flags, dest_addr, addr_len);
-#if EMU_PLATFORM != PLATFORM_MACOSX
-    // OS X uses the first byte for the struct length, Windows doesn't
-    dest_addr->sa_family = (dest_addr->sa_family << 8) | addr_len;
-#endif
+    int ret = -1;
+
+    if (ctr_dest_addr != nullptr) {
+        sockaddr dest_addr = CTRSockAddr::ToPlatform(*ctr_dest_addr);
+        ret = ::sendto(socket_handle, (const char*)input_buff, len, flags, &dest_addr, sizeof(dest_addr));
+    } else {
+        ret = ::sendto(socket_handle, (const char*)input_buff, len, flags, nullptr, 0);
+    }
 
     if (ret == SOCKET_ERROR_VALUE)
         ret = TranslateError(GET_ERRNO);
@@ -343,14 +461,13 @@ static void RecvFrom(Service::Interface* self) {
     socklen_t addr_len = static_cast<socklen_t>(cmd_buffer[4]);
 
     u8* output_buff = Memory::GetPointer(cmd_buffer[0x104 >> 2]);
-    sockaddr* src_addr = reinterpret_cast<sockaddr*>(Memory::GetPointer(cmd_buffer[0x1A0 >> 2]));
+    CTRSockAddr* ctr_src_addr = reinterpret_cast<CTRSockAddr*>(Memory::GetPointer(cmd_buffer[0x1A0 >> 2]));
+    sockaddr src_addr;
+    int src_addr_len = sizeof(src_addr);
+    int ret = ::recvfrom(socket_handle, (char*)output_buff, len, flags, &src_addr, &src_addr_len);
 
-    int ret = ::recvfrom(socket_handle, (char*)output_buff, len, flags, src_addr, &addr_len);
-#if EMU_PLATFORM != PLATFORM_MACOSX
-    // OS X uses the first byte for the struct length, Windows doesn't
-    if (src_addr != nullptr)
-        src_addr->sa_family = (src_addr->sa_family << 8) | addr_len;
-#endif
+    if (ctr_src_addr != nullptr)
+        *ctr_src_addr = CTRSockAddr::FromPlatform(src_addr);
 
     if (ret == SOCKET_ERROR_VALUE)
         ret = TranslateError(GET_ERRNO);
@@ -359,71 +476,24 @@ static void RecvFrom(Service::Interface* self) {
     cmd_buffer[1] = 0;
 }
 
-/// Translates the resulting events of a Poll operation from platform-specific to 3ds specific
-static u32 TranslatePollEvent3DS(u32 input_event) {
-    u32 ret = 0;
-    if (input_event & POLLIN)
-        ret |= 0x01;
-    if (input_event & POLLPRI)
-        ret |= 0x02;
-    if (input_event & POLLHUP)
-        ret |= 0x04;
-    if (input_event & POLLERR)
-        ret |= 0x08;
-    if (input_event & POLLOUT)
-        ret |= 0x10;
-    if (input_event & POLLNVAL)
-        ret |= 0x20;
-    return ret;
-}
-
-/// Translates the resulting events of a Poll operation from 3ds specific to platform specific
-static u32 TranslatePollEventPlatform(u32 input_event) {
-    u32 ret = 0;
-    if (input_event & 0x01)
-        ret |= POLLIN;
-    if (input_event & 0x02)
-        ret |= POLLPRI;
-    if (input_event & 0x04)
-        ret |= POLLHUP;
-    if (input_event & 0x08)
-        ret |= POLLERR;
-    if (input_event & 0x10)
-        ret |= POLLOUT;
-    if (input_event & 0x20)
-        ret |= POLLNVAL;
-    return ret;
-}
-
 static void Poll(Service::Interface* self) {
     u32* cmd_buffer = Service::GetCommandBuffer();
     u32 nfds = cmd_buffer[1];
     int timeout = cmd_buffer[2];
-    hw_pollfd* input_fds = reinterpret_cast<hw_pollfd*>(Memory::GetPointer(cmd_buffer[6]));
-    hw_pollfd* output_fds = reinterpret_cast<hw_pollfd*>(Memory::GetPointer(cmd_buffer[0x104 >> 2]));
+    CTRPollFD* input_fds = reinterpret_cast<CTRPollFD*>(Memory::GetPointer(cmd_buffer[6]));
+    CTRPollFD* output_fds = reinterpret_cast<CTRPollFD*>(Memory::GetPointer(cmd_buffer[0x104 >> 2]));
 
     // The 3ds_pollfd and the pollfd structures may be different (Windows/Linux have different sizes)
     // so we have to copy the data
     pollfd* platform_pollfd = new pollfd[nfds];
-    for (int current_fds = 0; current_fds < nfds; ++current_fds) {
-        platform_pollfd[current_fds].fd = input_fds[current_fds].fd;
-        platform_pollfd[current_fds].events = TranslatePollEventPlatform(input_fds[current_fds].events);
-        platform_pollfd[current_fds].revents = TranslatePollEventPlatform(input_fds[current_fds].revents);
-    }
+    for (unsigned current_fds = 0; current_fds < nfds; ++current_fds)
+        platform_pollfd[current_fds] = CTRPollFD::ToPlatform(input_fds[current_fds]);
     
-    int ret;
-#if EMU_PLATFORM == PLATFORM_WINDOWS
-    ret = WSAPoll(platform_pollfd, nfds, timeout);
-#else
-    ret = ::poll(platform_pollfd, nfds, timeout);
-#endif
+    int ret = ::poll(platform_pollfd, nfds, timeout);
 
     // Now update the output pollfd structure
-    for (int current_fds = 0; current_fds < nfds; ++current_fds) {
-        output_fds[current_fds].fd = platform_pollfd[current_fds].fd;
-        output_fds[current_fds].events = TranslatePollEvent3DS(platform_pollfd[current_fds].events);
-        output_fds[current_fds].revents = TranslatePollEvent3DS(platform_pollfd[current_fds].revents);
-    }
+    for (unsigned current_fds = 0; current_fds < nfds; ++current_fds)
+        output_fds[current_fds] = CTRPollFD::FromPlatform(platform_pollfd[current_fds]);
 
     delete[] platform_pollfd;
 
@@ -437,16 +507,20 @@ static void Poll(Service::Interface* self) {
 static void GetSockName(Service::Interface* self) {
     u32* cmd_buffer = Service::GetCommandBuffer();
     u32 socket_handle = cmd_buffer[1];
-    socklen_t len = cmd_buffer[2];
+    socklen_t ctr_len = cmd_buffer[2];
 
-    sockaddr* dest_addr = reinterpret_cast<sockaddr*>(Memory::GetPointer(cmd_buffer[0x104 >> 2]));
+    CTRSockAddr* ctr_dest_addr = reinterpret_cast<CTRSockAddr*>(Memory::GetPointer(cmd_buffer[0x104 >> 2]));
 
-    int ret = ::getsockname(socket_handle, dest_addr, &len);
-#if EMU_PLATFORM != PLATFORM_MACOSX
-    // OS X uses the first byte for the struct length, Windows doesn't
-    if (dest_addr != nullptr)
-        dest_addr->sa_family = (dest_addr->sa_family << 8) | len;
-#endif
+    sockaddr dest_addr;
+    int dest_addr_len = sizeof(dest_addr);
+    int ret = ::getsockname(socket_handle, &dest_addr, &dest_addr_len);
+
+    if (ctr_dest_addr != nullptr) {
+        *ctr_dest_addr = CTRSockAddr::FromPlatform(dest_addr);
+    } else {
+        cmd_buffer[1] = -1; // TODO(Subv): Verify error
+        return;
+    }
 
     if (ret != 0)
         ret = TranslateError(GET_ERRNO);
@@ -472,14 +546,18 @@ static void GetPeerName(Service::Interface* self) {
     u32 socket_handle = cmd_buffer[1];
     socklen_t len = cmd_buffer[2];
 
-    sockaddr* dest_addr = reinterpret_cast<sockaddr*>(Memory::GetPointer(cmd_buffer[0x104 >> 2]));
+    CTRSockAddr* ctr_dest_addr = reinterpret_cast<CTRSockAddr*>(Memory::GetPointer(cmd_buffer[0x104 >> 2]));
+    
+    sockaddr dest_addr;
+    int dest_addr_len = sizeof(dest_addr);
+    int ret = ::getpeername(socket_handle, &dest_addr, &dest_addr_len);
 
-    int ret = ::getpeername(socket_handle, dest_addr, &len);
-#if EMU_PLATFORM != PLATFORM_MACOSX
-    // OS X uses the first byte for the struct length, Windows doesn't
-    if (dest_addr != nullptr)
-        dest_addr->sa_family = (dest_addr->sa_family << 8) | len;
-#endif
+    if (ctr_dest_addr != nullptr) {
+        *ctr_dest_addr = CTRSockAddr::FromPlatform(dest_addr);
+    } else {
+        cmd_buffer[1] = -1;
+        return;
+    }
 
     if (ret != 0)
         ret = TranslateError(GET_ERRNO);
@@ -493,14 +571,14 @@ static void Connect(Service::Interface* self) {
     u32 socket_handle = cmd_buffer[1];
     socklen_t len = cmd_buffer[2];
 
-    sockaddr* input_addr = reinterpret_cast<sockaddr*>(Memory::GetPointer(cmd_buffer[6]));
+    CTRSockAddr* ctr_input_addr = reinterpret_cast<CTRSockAddr*>(Memory::GetPointer(cmd_buffer[6]));
+    if (ctr_input_addr == nullptr) {
+        cmd_buffer[1] = -1; // TODO(Subv): Verify error
+        return;
+    }
 
-    int ret = ::connect(socket_handle, input_addr, len);
-#if EMU_PLATFORM != PLATFORM_MACOSX
-    // OS X uses the first byte for the struct length, Windows doesn't
-    if (input_addr != nullptr)
-        input_addr->sa_family = (input_addr->sa_family << 8) | len;
-#endif
+    sockaddr input_addr = CTRSockAddr::ToPlatform(*ctr_input_addr);
+    int ret = ::connect(socket_handle, &input_addr, sizeof(input_addr));
     if (ret != 0)
         ret = TranslateError(GET_ERRNO);
     cmd_buffer[2] = ret;
@@ -512,7 +590,7 @@ static void InitializeSockets(Service::Interface* self) {
 #if EMU_PLATFORM == PLATFORM_WINDOWS
     WSADATA data;
     WSAStartup(MAKEWORD(2, 2), &data);
-#endif // _WIN32
+#endif
 
     u32* cmd_buffer = Service::GetCommandBuffer();
     cmd_buffer[1] = 0;
