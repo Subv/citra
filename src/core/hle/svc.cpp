@@ -360,7 +360,7 @@ static Result CreateMemoryBlock(Handle* memblock, u32 addr, u32 size, u32 my_per
 
     Handle shared_memory = Kernel::CreateSharedMemory();
     *memblock = shared_memory;
-    ERROR_LOG(SVC, "(STUBBED) called addr=0x%08X", addr);
+    LOG_WARNING(Kernel_SVC, "(STUBBED) called addr=0x%08X", addr);
     return 0;
 }
 

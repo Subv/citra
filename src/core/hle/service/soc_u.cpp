@@ -18,15 +18,16 @@
 #endif
 
 #include "common/log.h"
+#include "common/scope_exit.h"
 #include "core/hle/hle.h"
 #include "core/hle/service/soc_u.h"
 
 #if EMU_PLATFORM == PLATFORM_WINDOWS
 #    define WSAEAGAIN     WSAEWOULDBLOCK
+#    define WSAEMULTIHOP  -1 // Invalid dummy value
 #    define ERRNO(x)      WSA##x
 #    define GET_ERRNO     WSAGetLastError()
 #    define poll(x, y, z) WSAPoll(x, y, z);
-#    define EMULTIHOP     -1
 #else
 #    define ERRNO(x)      x
 #    define GET_ERRNO     errno
@@ -227,7 +228,7 @@ union CTRSockAddr {
                 break;
             }
             default:
-                _dbg_assert_msg_(HLE, false, "Unhandled address family (sa_family) in CTRSockAddr::ToPlatform");
+                _dbg_assert_msg_(Service_SOC, false, "Unhandled address family (sa_family) in CTRSockAddr::ToPlatform");
                 break;
         }
         return result;
@@ -248,7 +249,7 @@ union CTRSockAddr {
                 break;
             }
             default:
-                _dbg_assert_msg_(HLE, false, "Unhandled address family (sa_family) in CTRSockAddr::ToPlatform");
+                _dbg_assert_msg_(Service_SOC, false, "Unhandled address family (sa_family) in CTRSockAddr::ToPlatform");
                 break;
         }
         return result;
@@ -334,10 +335,10 @@ static void Fcntl(Service::Interface* self) {
 	});
  
 	if (ctr_cmd == 3) { // F_GETFL
-#if EMU_PLATFORM == PLATFORM_WINDOW
+#if EMU_PLATFORM == PLATFORM_WINDOWS
 		posix_ret = 0;
         auto iter = socket_blocking.find(socket_handle);
-		if (iter != socket_blocking.end() && *iter == false)
+		if (iter != socket_blocking.end() && iter->second == false)
 			posix_ret |= 4; // O_NONBLOCK
 #else
 		int ret = ::fcntl(socket_handle, F_GETFL, 0);
@@ -351,7 +352,7 @@ static void Fcntl(Service::Interface* self) {
 			posix_ret |= 4; // O_NONBLOCK
 #endif
 	} else if (ctr_cmd == 4) { // F_SETFL
-#if EMU_PLATFORM == PLATFORM_WINDOW
+#if EMU_PLATFORM == PLATFORM_WINDOWS
 		unsigned long tmp = (ctr_arg & 4 /* O_NONBLOCK */) ? 1 : 0;
 		int ret = ioctlsocket(socket_handle, FIONBIO, &tmp);
 		if (ret == SOCKET_ERROR_VALUE) {
