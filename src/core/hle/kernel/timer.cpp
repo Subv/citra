@@ -20,28 +20,27 @@ public:
     static Kernel::HandleType GetStaticHandleType() { return Kernel::HandleType::Timer; }
     Kernel::HandleType GetHandleType() const override { return Kernel::HandleType::Timer; }
 
-    ResetType intitial_reset_type;          ///< ResetType specified at Timer initialization
-    ResetType reset_type;                   ///< Current ResetType
+    ResetType reset_type;                   ///< The ResetType of this timer
 
-    bool locked;                            ///< Timer signal wait
+    bool signaled;                          ///< Whether the timer has been signaled or not
     std::vector<Handle> waiting_threads;    ///< Threads that are waiting for the timer
     std::string name;                       ///< Name of timer (optional)
 
     ResultVal<bool> WaitSynchronization() override {
-        bool wait = locked;
-        if (locked) {
+        bool wait = !signaled;
+        if (wait) {
             waiting_threads.push_back(GetCurrentThreadHandle());
             Kernel::WaitCurrentThread(WAITTYPE_TIMER, GetHandle());
         } else {
             if (reset_type != RESETTYPE_STICKY)
-                locked = true;
+                signaled = false;
         }
         return MakeResult<bool>(wait);
     }
 };
 
 /**
- * Creates a timer
+ * Creates a timer.
  * @param handle Reference to handle for the newly created timer
  * @param reset_type ResetType describing how to create timer
  * @param name Optional name of timer
@@ -52,8 +51,8 @@ Timer* CreateTimer(Handle& handle, const ResetType reset_type, const std::string
 
     handle = Kernel::g_object_pool.Create(timer);
 
-    timer->reset_type = timer->intitial_reset_type = reset_type;
-    timer->locked = true;
+    timer->reset_type = reset_type;
+    timer->signaled = false;
     timer->name = name;
 
     return timer;
@@ -70,7 +69,7 @@ ResultCode ClearTimer(Handle handle) {
     if (timer == nullptr)
         return InvalidHandle(ErrorModule::Kernel);
 
-    timer->locked = true;
+    timer->signaled = false;
     return RESULT_SUCCESS;
 }
 
