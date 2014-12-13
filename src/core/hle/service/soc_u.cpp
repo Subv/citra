@@ -350,10 +350,25 @@ static void Fcntl(Service::Interface* self) {
             ret = socket_blocking[socket_handle] ? 0 : 4;
         else
             ret = 0; // A socket is blocking by default
+    } else {
+        _dbg_assert_msg_(HLE, false, "Unsupported command or flag in fcntl call");
     }
 #else
+    // cmd 4 is F_SETFL and arg 4 is O_NONBLOCK
+    if (cmd == 4 && arg & 4) {
+        cmd = F_SETFL;
+        arg = O_NONBLOCK;
+    } else if (cmd == 3) {
+        // 3 is F_GETFL, this is used to check if a socket is nonblocking
+        // Return O_NONBLOCK (4) if the socket is nonblocking
+        cmd = F_GETFL;
+    }
     ret = ::fcntl(socket_handle, cmd, arg);
-    if (ret != 0)
+
+    // If the command is F_GETFL, return whether O_NONBLOCK was set, otherwise try to translate the error
+    if (cmd == 3 && ret & O_NONBLOCK)
+        ret = O_NONBLOCK;
+    else if (ret != 0)
         ret = TranslateError(GET_ERRNO);
 #endif
 
