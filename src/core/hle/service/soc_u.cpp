@@ -478,7 +478,7 @@ static void RecvFrom(Service::Interface* self) {
     u8* output_buff = Memory::GetPointer(cmd_buffer[0x104 >> 2]);
     CTRSockAddr* ctr_src_addr = reinterpret_cast<CTRSockAddr*>(Memory::GetPointer(cmd_buffer[0x1A0 >> 2]));
     sockaddr src_addr;
-    int src_addr_len = sizeof(src_addr);
+    socklen_t src_addr_len = sizeof(src_addr);
     int ret = ::recvfrom(socket_handle, (char*)output_buff, len, flags, &src_addr, &src_addr_len);
 
     if (ctr_src_addr != nullptr)
@@ -527,7 +527,7 @@ static void GetSockName(Service::Interface* self) {
     CTRSockAddr* ctr_dest_addr = reinterpret_cast<CTRSockAddr*>(Memory::GetPointer(cmd_buffer[0x104 >> 2]));
 
     sockaddr dest_addr;
-    int dest_addr_len = sizeof(dest_addr);
+    socklen_t dest_addr_len = sizeof(dest_addr);
     int ret = ::getsockname(socket_handle, &dest_addr, &dest_addr_len);
 
     if (ctr_dest_addr != nullptr) {
@@ -564,7 +564,7 @@ static void GetPeerName(Service::Interface* self) {
     CTRSockAddr* ctr_dest_addr = reinterpret_cast<CTRSockAddr*>(Memory::GetPointer(cmd_buffer[0x104 >> 2]));
     
     sockaddr dest_addr;
-    int dest_addr_len = sizeof(dest_addr);
+    socklen_t dest_addr_len = sizeof(dest_addr);
     int ret = ::getpeername(socket_handle, &dest_addr, &dest_addr_len);
 
     if (ctr_dest_addr != nullptr) {
