@@ -21,29 +21,25 @@
 #include "core/hle/hle.h"
 #include "core/hle/service/soc_u.h"
 
-#define SOCKET_ERROR_VALUE (-1)
-
 #if EMU_PLATFORM == PLATFORM_WINDOWS
-#define WSAEAGAIN    WSAEWOULDBLOCK
-#define ERRNO(x)  WSA##x
-#define GET_ERRNO WSAGetLastError()
-#define poll(x, y, z) WSAPoll(x, y, z);
+#    define WSAEAGAIN     WSAEWOULDBLOCK
+#    define ERRNO(x)      WSA##x
+#    define GET_ERRNO     WSAGetLastError()
+#    define poll(x, y, z) WSAPoll(x, y, z);
+#    define EMULTIHOP     -1
 #else
-#define ERRNO(x)  x
-#define GET_ERRNO errno
+#    define ERRNO(x)      x
+#    define GET_ERRNO     errno
 #endif
+
+static const s32 SOCKET_ERROR_VALUE = -1;
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // Namespace SOC_U
 
 namespace SOC_U {
 
-#if EMU_PLATFORM != PLATFORM_WINDOWS
 static const u32 error_map_size = 77;
-#else
-static const u32 error_map_size = 76;
-#endif
-
 /// Holds the translation from system network errors to 3DS network errors
 static const std::array<std::pair<int, int>, error_map_size> error_map = { {
     { E2BIG, 1 },
@@ -81,9 +77,7 @@ static const std::array<std::pair<int, int>, error_map_size> error_map = { {
     { ERRNO(EMFILE), 33 },
     { EMLINK, 34 },
     { ERRNO(EMSGSIZE), 35 },
-#if EMU_PLATFORM != PLATFORM_WINDOWS
     { ERRNO(EMULTIHOP), 36 },
-#endif
     { ERRNO(ENAMETOOLONG), 37 },
     { ERRNO(ENETDOWN), 38 },
     { ERRNO(ENETRESET), 39 },
@@ -295,11 +289,12 @@ static void Socket(Service::Interface* self) {
         socket_blocking[socket_handle] = true;
 #endif
 
+    int result = 0;
     if (socket_handle == SOCKET_ERROR_VALUE)
-        socket_handle = TranslateError(GET_ERRNO);
+        result = TranslateError(GET_ERRNO);
 
+    cmd_buffer[1] = result;
     cmd_buffer[2] = socket_handle;
-    cmd_buffer[1] = 0;
 }
 
 static void Bind(Service::Interface* self) {
@@ -317,63 +312,79 @@ static void Bind(Service::Interface* self) {
 
     int res = ::bind(socket_handle, &sock_addr, std::max<u32>(sizeof(sock_addr), len));
     
+    int result = 0;
     if (res != 0)
-        res = TranslateError(GET_ERRNO);
+        result = TranslateError(GET_ERRNO);
 
     cmd_buffer[2] = res;
-    cmd_buffer[1] = 0;
+    cmd_buffer[1] = result;
 }
 
 static void Fcntl(Service::Interface* self) {
-    u32* cmd_buffer = Service::GetCommandBuffer();
-    u32 socket_handle = cmd_buffer[1];
-    u32 cmd = cmd_buffer[2];
-    u32 arg = cmd_buffer[3];
-
-    u32 ret;
-#if EMU_PLATFORM == PLATFORM_WINDOWS
-    // Windows uses different enum values with different meanings,
-    // cmd 4 is F_SETFL and arg 4 is O_NONBLOCK
-    if (cmd == 4 && arg & 4) {
-        cmd = FIONBIO;
-        arg = 1;
-        ret = ioctlsocket(socket_handle, cmd, reinterpret_cast<u_long*>(&arg));
-
-        if (ret != 0)
-            ret = TranslateError(GET_ERRNO);
-
-        socket_blocking[socket_handle] = false;
-    } else if (cmd == 3) {
-        // 3 is F_GETFL, this is used to check if a socket is nonblocking
-        // Return O_NONBLOCK (4) if the socket is nonblocking
-        if (socket_blocking.find(socket_handle) != socket_blocking.end())
-            ret = socket_blocking[socket_handle] ? 0 : 4;
-        else
-            ret = 0; // A socket is blocking by default
-    } else {
-        _dbg_assert_msg_(HLE, false, "Unsupported command or flag in fcntl call");
-    }
+	u32* cmd_buffer = Service::GetCommandBuffer();
+	u32 socket_handle = cmd_buffer[1];
+	u32 ctr_cmd = cmd_buffer[2];
+	u32 ctr_arg = cmd_buffer[3];
+ 
+	int result = 0;
+	u32 posix_ret = 0; // TODO: Check what hardware returns for F_SETFL (unspecified by POSIX)
+	SCOPE_EXIT({
+		cmd_buffer[1] = result;
+		cmd_buffer[2] = posix_ret;
+	});
+ 
+	if (ctr_cmd == 3) { // F_GETFL
+#if EMU_PLATFORM == PLATFORM_WINDOW
+		posix_ret = 0;
+        auto iter = socket_blocking.find(socket_handle);
+		if (iter != socket_blocking.end() && *iter == false)
+			posix_ret |= 4; // O_NONBLOCK
 #else
-    // cmd 4 is F_SETFL and arg 4 is O_NONBLOCK
-    if (cmd == 4 && arg & 4) {
-        cmd = F_SETFL;
-        arg = O_NONBLOCK;
-    } else if (cmd == 3) {
-        // 3 is F_GETFL, this is used to check if a socket is nonblocking
-        // Return O_NONBLOCK (4) if the socket is nonblocking
-        cmd = F_GETFL;
-    }
-    ret = ::fcntl(socket_handle, cmd, arg);
-
-    // If the command is F_GETFL, return whether O_NONBLOCK was set, otherwise try to translate the error
-    if (cmd == 3 && ret & O_NONBLOCK)
-        ret = O_NONBLOCK;
-    else if (ret != 0)
-        ret = TranslateError(GET_ERRNO);
+		int ret = ::fcntl(socket_handle, F_GETFL, 0);
+		if (ret == SOCKET_ERROR_VALUE) {
+			result = TranslateError(GET_ERRNO);
+            posix_ret = -1;
+			return;
+		}
+		posix_ret = 0;
+		if (ret & O_NONBLOCK)
+			posix_ret |= 4; // O_NONBLOCK
 #endif
-
-    cmd_buffer[2] = ret;
-    cmd_buffer[1] = 0;
+	} else if (ctr_cmd == 4) { // F_SETFL
+#if EMU_PLATFORM == PLATFORM_WINDOW
+		unsigned long tmp = (ctr_arg & 4 /* O_NONBLOCK */) ? 1 : 0;
+		int ret = ioctlsocket(socket_handle, FIONBIO, &tmp);
+		if (ret == SOCKET_ERROR_VALUE) {
+			result = TranslateError(GET_ERRNO);
+            posix_ret = -1;
+			return;
+		}
+        socket_blocking[socket_handle] = tmp == 0;
+#else
+		int flags = ::fcntl(socket_handle, F_GETFL, 0);
+		if (flags == SOCKET_ERROR_VALUE) {
+			result = TranslateError(GET_ERRNO);
+            posix_ret = -1;
+			return;
+		}
+ 
+		flags &= ~O_NONBLOCK;
+		if (ctr_arg & 4) // O_NONBLOCK
+			flags |= O_NONBLOCK;
+ 
+		int ret = ::fcntl(socket_handle, F_SETFL, flags);
+		if (ret == SOCKET_ERROR_VALUE) {
+			result = TranslateError(GET_ERRNO);
+            posix_ret = -1;
+			return;
+		}
+#endif
+	} else {
+		LOG_ERROR(Service_SOC, "Unsupported command (%d) in fcntl call");
+		result = TranslateError(EINVAL); // TODO: Or something
+        posix_ret = -1;
+		return;
+	}
 }
 
 static void Listen(Service::Interface* self) {
@@ -382,11 +393,12 @@ static void Listen(Service::Interface* self) {
     u32 backlog = cmd_buffer[2];
 
     int ret = ::listen(socket_handle, backlog);
+    int result = 0;
     if (ret != 0)
-        ret = TranslateError(GET_ERRNO);
+        result = TranslateError(GET_ERRNO);
 
     cmd_buffer[2] = ret;
-    cmd_buffer[1] = 0;
+    cmd_buffer[1] = result;
 }
 
 static void Accept(Service::Interface* self) {
@@ -402,14 +414,15 @@ static void Accept(Service::Interface* self) {
         socket_blocking[ret] = true;
 #endif
 
+    int result = 0;
     if (ret == SOCKET_ERROR_VALUE)
-        ret = TranslateError(GET_ERRNO);
+        result = TranslateError(GET_ERRNO);
 
     CTRSockAddr ctr_addr = CTRSockAddr::FromPlatform(addr);
     Memory::WriteBlock(cmd_buffer[0x104 >> 2], (const u8*)&ctr_addr, max_addr_len);
 
     cmd_buffer[2] = ret;
-    cmd_buffer[1] = 0;
+    cmd_buffer[1] = result;
 }
 
 static void GetHostId(Service::Interface* self) {
@@ -436,10 +449,12 @@ static void Close(Service::Interface* self) {
     ret = ::close(socket_handle);
 #endif
 
+    int result = 0;
     if (ret != 0)
-        ret = TranslateError(GET_ERRNO);
+        result = TranslateError(GET_ERRNO);
+
     cmd_buffer[2] = ret;
-    cmd_buffer[1] = 0;
+    cmd_buffer[1] = result;
 }
 
 static void SendTo(Service::Interface* self) {
@@ -461,11 +476,12 @@ static void SendTo(Service::Interface* self) {
         ret = ::sendto(socket_handle, (const char*)input_buff, len, flags, nullptr, 0);
     }
 
+    int result = 0;
     if (ret == SOCKET_ERROR_VALUE)
-        ret = TranslateError(GET_ERRNO);
+        result = TranslateError(GET_ERRNO);
 
     cmd_buffer[2] = ret;
-    cmd_buffer[1] = 0;
+    cmd_buffer[1] = result;
 }
 
 static void RecvFrom(Service::Interface* self) {
@@ -484,11 +500,12 @@ static void RecvFrom(Service::Interface* self) {
     if (ctr_src_addr != nullptr)
         *ctr_src_addr = CTRSockAddr::FromPlatform(src_addr);
 
+    int result = 0;
     if (ret == SOCKET_ERROR_VALUE)
-        ret = TranslateError(GET_ERRNO);
+        result = TranslateError(GET_ERRNO);
 
     cmd_buffer[2] = ret;
-    cmd_buffer[1] = 0;
+    cmd_buffer[1] = result;
 }
 
 static void Poll(Service::Interface* self) {
@@ -512,10 +529,11 @@ static void Poll(Service::Interface* self) {
 
     delete[] platform_pollfd;
 
+    int result = 0;
     if (ret == SOCKET_ERROR_VALUE)
-        ret = TranslateError(GET_ERRNO);
+        result = TranslateError(GET_ERRNO);
 
-    cmd_buffer[1] = 0;
+    cmd_buffer[1] = result;
     cmd_buffer[2] = ret;
 }
 
@@ -537,11 +555,12 @@ static void GetSockName(Service::Interface* self) {
         return;
     }
 
+    int result = 0;
     if (ret != 0)
-        ret = TranslateError(GET_ERRNO);
+        result = TranslateError(GET_ERRNO);
 
     cmd_buffer[2] = ret;
-    cmd_buffer[1] = 0;
+    cmd_buffer[1] = result;
 }
 
 static void Shutdown(Service::Interface* self) {
@@ -550,10 +569,11 @@ static void Shutdown(Service::Interface* self) {
     int how = cmd_buffer[2];
 
     int ret = ::shutdown(socket_handle, how);
+    int result = 0;
     if (ret != 0)
-        ret = TranslateError(GET_ERRNO);
+        result = TranslateError(GET_ERRNO);
     cmd_buffer[2] = ret;
-    cmd_buffer[1] = 0;
+    cmd_buffer[1] = result;
 }
 
 static void GetPeerName(Service::Interface* self) {
@@ -574,11 +594,12 @@ static void GetPeerName(Service::Interface* self) {
         return;
     }
 
+    int result = 0;
     if (ret != 0)
-        ret = TranslateError(GET_ERRNO);
+        result = TranslateError(GET_ERRNO);
 
     cmd_buffer[2] = ret;
-    cmd_buffer[1] = 0;
+    cmd_buffer[1] = result;
 }
 
 static void Connect(Service::Interface* self) {
@@ -594,10 +615,11 @@ static void Connect(Service::Interface* self) {
 
     sockaddr input_addr = CTRSockAddr::ToPlatform(*ctr_input_addr);
     int ret = ::connect(socket_handle, &input_addr, sizeof(input_addr));
+    int result = 0;
     if (ret != 0)
-        ret = TranslateError(GET_ERRNO);
+        result = TranslateError(GET_ERRNO);
     cmd_buffer[2] = ret;
-    cmd_buffer[1] = 0;
+    cmd_buffer[1] = result;
 }
 
 static void InitializeSockets(Service::Interface* self) {
@@ -665,6 +687,7 @@ Interface::Interface() {
 
 Interface::~Interface() {
 #if EMU_PLATFORM == PLATFORM_WINDOWS
+    WSACleanup();
     socket_blocking.clear();
 #endif
 }
