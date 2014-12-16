@@ -22,7 +22,6 @@ namespace FileSys {
 class DiskArchive : public ArchiveBackend {
 public:
     DiskArchive(const std::string& mount_point);
-    ~DiskArchive() override;
 
     virtual std::string GetName() const = 0;
 
@@ -54,7 +53,10 @@ class DiskFile : public FileBackend {
 public:
     DiskFile();
     DiskFile(const DiskArchive* archive, const Path& path, const Mode mode);
-    ~DiskFile() override;
+    
+    ~DiskFile() override {
+        Close();
+    }
 
     bool Open() override;
 

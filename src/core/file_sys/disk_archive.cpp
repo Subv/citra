@@ -19,9 +19,6 @@ DiskArchive::DiskArchive(const std::string& mount_point) {
     this->mount_point = mount_point;
 }
 
-DiskArchive::~DiskArchive() {
-}
-
 std::unique_ptr<FileBackend> DiskArchive::OpenFile(const Path& path, const Mode mode) const {
     LOG_DEBUG(Service_FS, "called path=%s mode=%u", path.DebugStr().c_str(), mode.hex);
     DiskFile* file = new DiskFile(this, path, mode);
@@ -69,10 +66,6 @@ DiskFile::DiskFile(const DiskArchive* archive, const Path& path, const Mode mode
     this->path = archive->GetMountPoint() + path.AsString();
     this->mode.hex = mode.hex;
     this->archive = archive;
-}
-
-DiskFile::~DiskFile() {
-    Close();
 }
 
 bool DiskFile::Open() {
