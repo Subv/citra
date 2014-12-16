@@ -8,7 +8,7 @@
 #include "common/file_util.h"
 
 #include "core/file_sys/directory_backend.h"
-#include "core/file_sys/archive_sdmc.h"
+#include "core/file_sys/disk_archive.h"
 #include "core/loader/loader.h"
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -16,11 +16,11 @@
 
 namespace FileSys {
 
-class Directory_SDMC final : public DirectoryBackend {
+class DiskDirectory : public DirectoryBackend {
 public:
-    Directory_SDMC();
-    Directory_SDMC(const Archive_SDMC* archive, const Path& path);
-    ~Directory_SDMC() override;
+    DiskDirectory();
+    DiskDirectory(const DiskArchive* archive, const Path& path);
+    ~DiskDirectory() override;
 
     /**
     * Open the directory
@@ -42,7 +42,8 @@ public:
      */
     bool Close() const override;
 
-private:
+protected:
+    DiskArchive const* archive;
     std::string path;
     u32 total_entries_in_directory;
     FileUtil::FSTEntry directory;

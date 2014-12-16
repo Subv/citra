@@ -1,5 +1,5 @@
 // Copyright 2014 Citra Emulator Project
-// Licensed under GPLv2+
+// Licensed under GPLv2
 // Refer to the license.txt file included.
 
 #pragma once
@@ -8,7 +8,7 @@
 #include "common/file_util.h"
 
 #include "core/file_sys/file_backend.h"
-#include "core/file_sys/archive_savedata.h"
+#include "core/file_sys/disk_archive.h"
 #include "core/loader/loader.h"
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -16,11 +16,11 @@
 
 namespace FileSys {
 
-class File_SaveData final : public FileBackend {
+class DiskFile : public FileBackend {
 public:
-    File_SaveData();
-    File_SaveData(const Archive_SaveData* archive, const Path& path, const Mode mode);
-    ~File_SaveData() override;
+    DiskFile();
+    DiskFile(const DiskArchive* archive, const Path& path, const Mode mode);
+    ~DiskFile() override;
 
     /**
      * Open the file
@@ -66,7 +66,8 @@ public:
      */
     bool Close() const override;
 
-private:
+protected:
+    DiskArchive const* archive;
     std::string path;
     Mode mode;
     FileUtil::IOFile* file;

@@ -7,27 +7,27 @@
 #include "common/common_types.h"
 #include "common/file_util.h"
 
-#include "core/file_sys/directory_sdmc.h"
-#include "core/file_sys/archive_sdmc.h"
+#include "core/file_sys/disk_directory.h"
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // FileSys namespace
 
 namespace FileSys {
 
-Directory_SDMC::Directory_SDMC(const Archive_SDMC* archive, const Path& path) {
+DiskDirectory::DiskDirectory(const DiskArchive* archive, const Path& path) {
     // TODO(Link Mauve): normalize path into an absolute path without "..", it can currently bypass
     // the root directory we set while opening the archive.
     // For example, opening /../../usr/bin can give the emulated program your installed programs.
     this->path = archive->GetMountPoint() + path.AsString();
+    this->archive = archive;
 
 }
 
-Directory_SDMC::~Directory_SDMC() {
+DiskDirectory::~DiskDirectory() {
     Close();
 }
 
-bool Directory_SDMC::Open() {
+bool DiskDirectory::Open() {
     if (!FileUtil::IsDirectory(path))
         return false;
     FileUtil::ScanDirectoryTree(path, directory);
@@ -35,13 +35,7 @@ bool Directory_SDMC::Open() {
     return true;
 }
 
-/**
- * List files contained in the directory
- * @param count Number of entries to return at once in entries
- * @param entries Buffer to read data into
- * @return Number of entries listed
- */
-u32 Directory_SDMC::Read(const u32 count, Entry* entries) {
+u32 DiskDirectory::Read(const u32 count, Entry* entries) {
     u32 entries_read = 0;
 
     while (entries_read < count && children_iterator != directory.children.cend()) {
@@ -77,11 +71,7 @@ u32 Directory_SDMC::Read(const u32 count, Entry* entries) {
     return entries_read;
 }
 
-/**
- * Close the directory
- * @return true if the directory closed correctly
- */
-bool Directory_SDMC::Close() const {
+bool DiskDirectory::Close() const {
     return true;
 }
 
