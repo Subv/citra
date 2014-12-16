@@ -34,12 +34,6 @@ bool Directory_SaveData::Open() {
     return true;
 }
 
-/**
- * List files contained in the directory
- * @param count Number of entries to return at once in entries
- * @param entries Buffer to read data into
- * @return Number of entries listed
- */
 u32 Directory_SaveData::Read(const u32 count, Entry* entries) {
     u32 entries_read = 0;
 
@@ -76,10 +70,6 @@ u32 Directory_SaveData::Read(const u32 count, Entry* entries) {
     return entries_read;
 }
 
-/**
- * Close the directory
- * @return true if the directory closed correctly
- */
 bool Directory_SaveData::Close() const {
     return true;
 }
