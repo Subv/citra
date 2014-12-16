@@ -221,7 +221,6 @@ ResultVal<ArchiveHandle> OpenArchive(ArchiveIdCode id_code) {
 
     auto itr = id_code_map.find(id_code);
     if (itr == id_code_map.end()) {
-        // Create the SaveData archive on demand
         if (id_code == ArchiveIdCode::SaveData) {
             // When a SaveData archive is created for the first time, it is not yet formatted
             // and the save file/directory structure expected by the game has not yet been initialized. 
@@ -230,11 +229,10 @@ ResultVal<ArchiveHandle> OpenArchive(ArchiveIdCode id_code) {
             // The FormatSaveData service call will create the SaveData archive when it is called.
             return ResultCode(ErrorDescription::NotFormatted, ErrorModule::FS,
                 ErrorSummary::InvalidState, ErrorLevel::Status);
-        } else {
-            // TODO: Verify error against hardware
-            return ResultCode(ErrorDescription::NotFound, ErrorModule::FS,
-                ErrorSummary::NotFound, ErrorLevel::Permanent);
         }
+        // TODO: Verify error against hardware
+        return ResultCode(ErrorDescription::NotFound, ErrorModule::FS,
+            ErrorSummary::NotFound, ErrorLevel::Permanent);
     }
 
     // This should never even happen in the first place with 64-bit handles, 

@@ -21,29 +21,24 @@ namespace FileSys {
  */
 class DiskArchive : public ArchiveBackend {
 public:
-    DiskArchive(const std::string& mount_point);
+    DiskArchive(const std::string& mount_point_) : mount_point(mount_point_) {}
 
     virtual std::string GetName() const = 0;
-
     std::unique_ptr<FileBackend> OpenFile(const Path& path, const Mode mode) const override;
-
     bool DeleteFile(const FileSys::Path& path) const override;
-
     bool RenameFile(const FileSys::Path& src_path, const FileSys::Path& dest_path) const override;
-
     bool DeleteDirectory(const FileSys::Path& path) const override;
-
     bool CreateDirectory(const Path& path) const override;
-
     bool RenameDirectory(const FileSys::Path& src_path, const FileSys::Path& dest_path) const override;
-
     std::unique_ptr<DirectoryBackend> OpenDirectory(const Path& path) const override;
 
     /**
      * Getter for the path used for this Archive
      * @return Mount point of that passthrough archive
      */
-    std::string GetMountPoint() const;
+    const std::string& GetMountPoint() const {
+        return mount_point;
+    }
 
 protected:
     std::string mount_point;
@@ -59,15 +54,10 @@ public:
     }
 
     bool Open() override;
-
     size_t Read(const u64 offset, const u32 length, u8* buffer) const override;
-
     size_t Write(const u64 offset, const u32 length, const u32 flush, const u8* buffer) const override;
-
     size_t GetSize() const override;
-
     bool SetSize(const u64 size) const override;
-
     bool Close() const override;
 
 protected:
@@ -87,10 +77,11 @@ public:
     }
 
     bool Open() override;
-
     u32 Read(const u32 count, Entry* entries) override;
 
-    bool Close() const override;
+    bool Close() const override {
+        return true;
+    }
 
 protected:
     const DiskArchive* archive;

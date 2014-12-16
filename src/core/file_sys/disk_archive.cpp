@@ -15,12 +15,8 @@
 
 namespace FileSys {
 
-DiskArchive::DiskArchive(const std::string& mount_point) {
-    this->mount_point = mount_point;
-}
-
 std::unique_ptr<FileBackend> DiskArchive::OpenFile(const Path& path, const Mode mode) const {
-    LOG_DEBUG(Service_FS, "called path=%s mode=%u", path.DebugStr().c_str(), mode.hex);
+    LOG_DEBUG(Service_FS, "called path=%s mode=%01X", path.DebugStr().c_str(), mode.hex);
     DiskFile* file = new DiskFile(this, path, mode);
     if (!file->Open())
         return nullptr;
@@ -55,9 +51,7 @@ std::unique_ptr<DirectoryBackend> DiskArchive::OpenDirectory(const Path& path) c
     return std::unique_ptr<DirectoryBackend>(directory);
 }
 
-std::string DiskArchive::GetMountPoint() const {
-    return mount_point;
-}
+////////////////////////////////////////////////////////////////////////////////////////////////////
 
 DiskFile::DiskFile(const DiskArchive* archive, const Path& path, const Mode mode) {
     // TODO(Link Mauve): normalize path into an absolute path without "..", it can currently bypass
@@ -116,6 +110,8 @@ bool DiskFile::Close() const {
     return file->Close();
 }
 
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
 DiskDirectory::DiskDirectory(const DiskArchive* archive, const Path& path) {
     // TODO(Link Mauve): normalize path into an absolute path without "..", it can currently bypass
     // the root directory we set while opening the archive.
@@ -166,10 +162,6 @@ u32 DiskDirectory::Read(const u32 count, Entry* entries) {
         ++children_iterator;
     }
     return entries_read;
-}
-
-bool DiskDirectory::Close() const {
-    return true;
 }
 
 } // namespace FileSys
