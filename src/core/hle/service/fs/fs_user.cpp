@@ -398,11 +398,11 @@ static void IsSdmcDetected(Service::Interface* self) {
 }
 
 /**
-* FS_User::FormatSaveData service function
-*  Inputs:
-*  Outputs:
-*      1 : Result of function, 0 on success, otherwise error code
-*/
+ * FS_User::FormatSaveData service function
+ *  Inputs:
+ *  Outputs:
+ *      1 : Result of function, 0 on success, otherwise error code
+ */
 static void FormatSaveData(Service::Interface* self) {
     u32* cmd_buff = Kernel::GetCommandBuffer();
     LOG_ERROR(Service_FS, "(STUBBED)");

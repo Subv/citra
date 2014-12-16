@@ -20,7 +20,6 @@ Directory_SaveData::Directory_SaveData(const Archive_SaveData* archive, const Pa
     // the root directory we set while opening the archive.
     // For example, opening /../../usr/bin can give the emulated program your installed programs.
     this->path = archive->GetMountPoint() + path.AsString();
-
 }
 
 Directory_SaveData::~Directory_SaveData() {

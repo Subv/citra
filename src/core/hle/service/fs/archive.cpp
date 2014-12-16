@@ -236,7 +236,10 @@ ResultVal<ArchiveHandle> OpenArchive(ArchiveIdCode id_code) {
                     savedata_archive->GetMountPoint().c_str());
             }
 
-            // Return a NotFormatted error code if the savedata has just been created
+            // When a SaveData archive is created for the first time, it is not yet formatted
+            // and the save file/directory structure expected by the game has not yet been initialized. 
+            // Returning the NotFormatted error code will signal the game to provision the SaveData archive 
+            // with the files and folders that it expects.
             if (result == Archive_SaveData::CreateSaveDataResult::Success) {
                 return ResultCode(ErrorDescription::NotFormatted, ErrorModule::FS,
                     ErrorSummary::InvalidState, ErrorLevel::Status);
