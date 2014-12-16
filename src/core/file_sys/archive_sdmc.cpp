@@ -8,8 +8,7 @@
 #include "common/file_util.h"
 
 #include "core/file_sys/archive_sdmc.h"
-#include "core/file_sys/disk_directory.h"
-#include "core/file_sys/disk_file.h"
+#include "core/file_sys/disk_archive.h"
 #include "core/settings.h"
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -19,9 +18,6 @@ namespace FileSys {
 
 Archive_SDMC::Archive_SDMC(const std::string& mount_point) : DiskArchive(mount_point) {
     LOG_INFO(Service_FS, "Directory %s set as SDMC.", mount_point.c_str());
-}
-
-Archive_SDMC::~Archive_SDMC() {
 }
 
 bool Archive_SDMC::Initialize() {

@@ -14,7 +14,11 @@
 
 namespace FileSys {
 
-/// File system interface to the various archives
+/**
+ * Helper which implements a backend accessing the host machine's filesystem. 
+ * This should be subclassed by concrete archive types, which will provide the 
+ * base directory on the host filesystem and override any required functionality.
+ */
 class DiskArchive : public ArchiveBackend {
 public:
     DiskArchive(const std::string& mount_point);
@@ -22,56 +26,18 @@ public:
 
     virtual std::string GetName() const = 0;
 
-    /**
-     * Open a file specified by its path, using the specified mode
-     * @param path Path relative to the archive
-     * @param mode Mode to open the file with
-     * @return Opened file, or nullptr
-     */
     std::unique_ptr<FileBackend> OpenFile(const Path& path, const Mode mode) const override;
 
-    /**
-     * Delete a file specified by its path
-     * @param path Path relative to the archive
-     * @return Whether the file could be deleted
-     */
     bool DeleteFile(const FileSys::Path& path) const override;
 
-    /**
-     * Rename a File specified by its path
-     * @param src_path Source path relative to the archive
-     * @param dest_path Destination path relative to the archive
-     * @return Whether rename succeeded
-     */
     bool RenameFile(const FileSys::Path& src_path, const FileSys::Path& dest_path) const override;
 
-    /**
-     * Delete a directory specified by its path
-     * @param path Path relative to the archive
-     * @return Whether the directory could be deleted
-     */
     bool DeleteDirectory(const FileSys::Path& path) const override;
 
-    /**
-     * Create a directory specified by its path
-     * @param path Path relative to the archive
-     * @return Whether the directory could be created
-     */
     bool CreateDirectory(const Path& path) const override;
 
-    /**
-     * Rename a Directory specified by its path
-     * @param src_path Source path relative to the archive
-     * @param dest_path Destination path relative to the archive
-     * @return Whether rename succeeded
-     */
     bool RenameDirectory(const FileSys::Path& src_path, const FileSys::Path& dest_path) const override;
 
-    /**
-     * Open a directory specified by its path
-     * @param path Path relative to the archive
-     * @return Opened directory, or nullptr
-     */
     std::unique_ptr<DirectoryBackend> OpenDirectory(const Path& path) const override;
 
     /**
@@ -82,6 +48,57 @@ public:
 
 protected:
     std::string mount_point;
+};
+
+class DiskFile : public FileBackend {
+public:
+    DiskFile();
+    DiskFile(const DiskArchive* archive, const Path& path, const Mode mode);
+    ~DiskFile() override;
+
+    bool Open() override;
+
+    size_t Read(const u64 offset, const u32 length, u8* buffer) const override;
+
+    size_t Write(const u64 offset, const u32 length, const u32 flush, const u8* buffer) const override;
+
+    size_t GetSize() const override;
+
+    bool SetSize(const u64 size) const override;
+
+    bool Close() const override;
+
+protected:
+    const DiskArchive* archive;
+    std::string path;
+    Mode mode;
+    FileUtil::IOFile* file;
+};
+
+class DiskDirectory : public DirectoryBackend {
+public:
+    DiskDirectory();
+    DiskDirectory(const DiskArchive* archive, const Path& path);
+
+    ~DiskDirectory() override {
+        Close();
+    }
+
+    bool Open() override;
+
+    u32 Read(const u32 count, Entry* entries) override;
+
+    bool Close() const override;
+
+protected:
+    const DiskArchive* archive;
+    std::string path;
+    u32 total_entries_in_directory;
+    FileUtil::FSTEntry directory;
+
+    // We need to remember the last entry we returned, so a subsequent call to Read will continue
+    // from the next one.  This iterator will always point to the next unread entry.
+    std::vector<FileUtil::FSTEntry>::iterator children_iterator;
 };
 
 } // namespace FileSys

@@ -8,8 +8,7 @@
 #include "common/file_util.h"
 
 #include "core/file_sys/archive_savedata.h"
-#include "core/file_sys/disk_file.h"
-#include "core/file_sys/disk_directory.h"
+#include "core/file_sys/disk_archive.h"
 #include "core/settings.h"
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -18,7 +17,7 @@
 namespace FileSys {
 
 Archive_SaveData::Archive_SaveData(const std::string& mount_point, u64 program_id) 
-    : DiskArchive(mount_point + Common::StringFromFormat("%016X", program_id) + DIR_SEP) {
+        : DiskArchive(mount_point + Common::StringFromFormat("%016X", program_id) + DIR_SEP) {
     LOG_INFO(Service_FS, "Directory %s set as SaveData.", this->mount_point.c_str());
 }
 

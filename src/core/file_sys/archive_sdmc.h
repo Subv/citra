@@ -18,7 +18,6 @@ namespace FileSys {
 class Archive_SDMC final : public DiskArchive {
 public:
     Archive_SDMC(const std::string& mount_point);
-    ~Archive_SDMC() override;
 
     /**
      * Initialize the archive.
