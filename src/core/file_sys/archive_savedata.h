@@ -17,12 +17,6 @@ namespace FileSys {
 /// File system interface to the SaveData archive
 class Archive_SaveData final : public DiskArchive {
 public:
-    enum class CreateSaveDataResult {
-        AlreadyExists,
-        Success,
-        Failure
-    };
-
     Archive_SaveData(const std::string& mount_point, u64 program_id);
 
     /**
@@ -30,7 +24,7 @@ public:
      * @return CreateSaveDataResult AlreadyExists if the SaveData folder already exists,
      * Success if it was created properly and Failure if there was any error
      */
-    CreateSaveDataResult Initialize();
+    bool Initialize();
 
     std::string GetName() const override { return "SaveData"; }
 };

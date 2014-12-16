@@ -9,9 +9,9 @@
 #include "common/file_util.h"
 #include "common/math_util.h"
 
+#include "core/file_sys/archive_savedata.h"
 #include "core/file_sys/archive_backend.h"
 #include "core/file_sys/archive_sdmc.h"
-#include "core/file_sys/archive_savedata.h"
 #include "core/file_sys/directory_backend.h"
 #include "core/hle/service/fs/archive.h"
 #include "core/hle/kernel/session.h"
@@ -223,28 +223,13 @@ ResultVal<ArchiveHandle> OpenArchive(ArchiveIdCode id_code) {
     if (itr == id_code_map.end()) {
         // Create the SaveData archive on demand
         if (id_code == ArchiveIdCode::SaveData) {
-            using FileSys::Archive_SaveData;
-            std::string savedata_directory = FileUtil::GetUserPath(D_SAVEDATA_IDX);
-            auto savedata_archive = std::make_unique<FileSys::Archive_SaveData>(savedata_directory,
-                Kernel::g_program_id);
-
-            Archive_SaveData::CreateSaveDataResult result = savedata_archive->Initialize();
-            if (result != Archive_SaveData::CreateSaveDataResult::Failure) {
-                CreateArchive(std::move(savedata_archive), ArchiveIdCode::SaveData);
-            } else {
-                LOG_ERROR(Service_FS, "Can't instantiate SaveData archive with path %s",
-                    savedata_archive->GetMountPoint().c_str());
-            }
-
             // When a SaveData archive is created for the first time, it is not yet formatted
             // and the save file/directory structure expected by the game has not yet been initialized. 
             // Returning the NotFormatted error code will signal the game to provision the SaveData archive 
-            // with the files and folders that it expects.
-            if (result == Archive_SaveData::CreateSaveDataResult::Success) {
-                return ResultCode(ErrorDescription::NotFormatted, ErrorModule::FS,
-                    ErrorSummary::InvalidState, ErrorLevel::Status);
-            } else if (result == Archive_SaveData::CreateSaveDataResult::AlreadyExists)
-                itr = id_code_map.find(id_code); // Try to find it again
+            // with the files and folders that it expects. 
+            // The FormatSaveData service call will create the SaveData archive when it is called.
+            return ResultCode(ErrorDescription::NotFormatted, ErrorModule::FS,
+                ErrorSummary::InvalidState, ErrorLevel::Status);
         } else {
             // TODO: Verify error against hardware
             return ResultCode(ErrorDescription::NotFound, ErrorModule::FS,
@@ -391,6 +376,28 @@ ResultVal<Handle> OpenDirectoryFromArchive(ArchiveHandle archive_handle, const F
     auto directory = std::make_unique<Directory>(std::move(backend), path);
     Handle handle = Kernel::g_object_pool.Create(directory.release());
     return MakeResult<Handle>(handle);
+}
+
+ResultCode FormatSaveData() {
+    // TODO(Subv): Actually wipe the savedata folder after creating or opening it
+
+    // Do not create the archive again if it already exists
+    if (id_code_map.find(ArchiveIdCode::SaveData) != id_code_map.end())
+        return UnimplementedFunction(ErrorModule::FS); // TODO(Subv): Find the correct error code
+
+    // Create the SaveData archive
+    std::string savedata_directory = FileUtil::GetUserPath(D_SAVEDATA_IDX);
+    auto savedata_archive = std::make_unique<FileSys::Archive_SaveData>(savedata_directory,
+        Kernel::g_program_id);
+
+    if (savedata_archive->Initialize()) {
+        CreateArchive(std::move(savedata_archive), ArchiveIdCode::SaveData);
+        return RESULT_SUCCESS;
+    } else {
+        LOG_ERROR(Service_FS, "Can't instantiate SaveData archive with path %s",
+            savedata_archive->GetMountPoint().c_str());
+        return UnimplementedFunction(ErrorModule::FS); // TODO(Subv): Find the proper error code
+    }
 }
 
 /// Initialize archives

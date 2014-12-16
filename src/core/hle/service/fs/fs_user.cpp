@@ -405,9 +405,11 @@ static void IsSdmcDetected(Service::Interface* self) {
  */
 static void FormatSaveData(Service::Interface* self) {
     u32* cmd_buff = Kernel::GetCommandBuffer();
-    LOG_ERROR(Service_FS, "(STUBBED)");
-    // TODO(Subv): Implement this
-    cmd_buff[1] = 0;
+    LOG_DEBUG(Service_FS, "(STUBBED)");
+
+    // TODO(Subv): Find out what the inputs and outputs of this function are
+
+    cmd_buff[1] = FormatSaveData().raw;
 }
 
 const FSUserInterface::FunctionInfo FunctionTable[] = {

@@ -21,16 +21,13 @@ Archive_SaveData::Archive_SaveData(const std::string& mount_point, u64 program_i
     LOG_INFO(Service_FS, "Directory %s set as SaveData.", this->mount_point.c_str());
 }
 
-Archive_SaveData::CreateSaveDataResult Archive_SaveData::Initialize() {
-    if (FileUtil::Exists(mount_point))
-        return CreateSaveDataResult::AlreadyExists;
-
+bool Archive_SaveData::Initialize() {
     if (!FileUtil::CreateFullPath(mount_point)) {
         LOG_ERROR(Service_FS, "Unable to create SaveData path.");
-        return CreateSaveDataResult::Failure;
+        return false;
     }
 
-    return CreateSaveDataResult::Success;
+    return true;
 }
 
 } // namespace FileSys
