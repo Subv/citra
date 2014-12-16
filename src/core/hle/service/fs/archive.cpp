@@ -228,11 +228,11 @@ ResultVal<ArchiveHandle> OpenArchive(ArchiveIdCode id_code) {
             // with the files and folders that it expects. 
             // The FormatSaveData service call will create the SaveData archive when it is called.
             return ResultCode(ErrorDescription::NotFormatted, ErrorModule::FS,
-                ErrorSummary::InvalidState, ErrorLevel::Status);
+                              ErrorSummary::InvalidState, ErrorLevel::Status);
         }
         // TODO: Verify error against hardware
         return ResultCode(ErrorDescription::NotFound, ErrorModule::FS,
-            ErrorSummary::NotFound, ErrorLevel::Permanent);
+                          ErrorSummary::NotFound, ErrorLevel::Permanent);
     }
 
     // This should never even happen in the first place with 64-bit handles, 
