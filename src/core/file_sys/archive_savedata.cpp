@@ -18,7 +18,7 @@
 namespace FileSys {
 
 Archive_SaveData::Archive_SaveData(const std::string& mount_point, u64 program_id) 
-    : DiskArchive(mount_point + std::to_string(program_id) + DIR_SEP) {
+    : DiskArchive(mount_point + Common::StringFromFormat("%016X", program_id) + DIR_SEP) {
     LOG_INFO(Service_FS, "Directory %s set as SaveData.", this->mount_point.c_str());
 }
 

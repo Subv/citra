@@ -78,7 +78,7 @@ public:
      * Getter for the path used for this Archive
      * @return Mount point of that passthrough archive
      */
-    virtual std::string GetMountPoint() const;
+    std::string GetMountPoint() const;
 
 protected:
     std::string mount_point;
