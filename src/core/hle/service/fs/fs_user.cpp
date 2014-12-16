@@ -6,6 +6,7 @@
 #include "common/scope_exit.h"
 
 #include "common/string_util.h"
+#include "common/file_util.h"
 #include "core/hle/service/fs/archive.h"
 #include "core/hle/result.h"
 #include "core/hle/service/fs/fs_user.h"
@@ -50,9 +51,7 @@ static void Initialize(Service::Interface* self) {
 static void OpenFile(Service::Interface* self) {
     u32* cmd_buff = Kernel::GetCommandBuffer();
 
-    // TODO(Link Mauve): cmd_buff[2], aka archive handle lower word, isn't used according to
-    // 3dmoo's or ctrulib's implementations.  Triple check if it's really the case.
-    Handle archive_handle = static_cast<Handle>(cmd_buff[3]);
+    ArchiveHandle archive_handle = MakeArchiveHandle(cmd_buff[2], cmd_buff[3]);
     auto filename_type    = static_cast<FileSys::LowPathType>(cmd_buff[4]);
     u32 filename_size     = cmd_buff[5];
     FileSys::Mode mode; mode.hex = cmd_buff[6];
@@ -398,6 +397,19 @@ static void IsSdmcDetected(Service::Interface* self) {
     LOG_DEBUG(Service_FS, "called");
 }
 
+/**
+* FS_User::FormatSaveData service function
+*  Inputs:
+*  Outputs:
+*      1 : Result of function, 0 on success, otherwise error code
+*/
+static void FormatSaveData(Service::Interface* self) {
+    u32* cmd_buff = Kernel::GetCommandBuffer();
+    LOG_ERROR(Service_FS, "(STUBBED)");
+    // TODO(Subv): Implement this
+    cmd_buff[1] = 0;
+}
+
 const FSUserInterface::FunctionInfo FunctionTable[] = {
     {0x000100C6, nullptr,               "Dummy1"},
     {0x040100C4, nullptr,               "Control"},
@@ -476,7 +488,7 @@ const FSUserInterface::FunctionInfo FunctionTable[] = {
     {0x08490040, nullptr,               "GetArchiveResource"},
     {0x084A0002, nullptr,               "ExportIntegrityVerificationSeed"},
     {0x084B0002, nullptr,               "ImportIntegrityVerificationSeed"},
-    {0x084C0242, nullptr,               "FormatSaveData"},
+    {0x084C0242, FormatSaveData,        "FormatSaveData"},
     {0x084D0102, nullptr,               "GetLegacySubBannerData"},
     {0x084E0342, nullptr,               "UpdateSha256Context"},
     {0x084F0102, nullptr,               "ReadSpecialFile"},

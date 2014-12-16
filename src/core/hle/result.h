@@ -17,6 +17,7 @@
 /// Detailed description of the error. This listing is likely incomplete.
 enum class ErrorDescription : u32 {
     Success = 0,
+    NotFormatted = 340,
     InvalidSection = 1000,
     TooLarge = 1001,
     NotAuthorized = 1002,

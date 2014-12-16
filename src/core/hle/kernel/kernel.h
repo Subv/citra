@@ -151,6 +151,9 @@ private:
 extern ObjectPool g_object_pool;
 extern Handle g_main_thread;
 
+/// The ID code of the currently running game
+extern u64 g_program_id;
+
 /// Initialize the kernel
 void Init();
 
