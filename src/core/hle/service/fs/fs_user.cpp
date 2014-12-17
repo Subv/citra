@@ -3,12 +3,11 @@
 // Refer to the license.txt file included.
 
 #include "common/common.h"
-#include "common/scope_exit.h"
-
-#include "common/string_util.h"
 #include "common/file_util.h"
-#include "core/hle/service/fs/archive.h"
+#include "common/scope_exit.h"
+#include "common/string_util.h"
 #include "core/hle/result.h"
+#include "core/hle/service/fs/archive.h"
 #include "core/hle/service/fs/fs_user.h"
 #include "core/settings.h"
 
