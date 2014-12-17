@@ -278,7 +278,7 @@ ResultVal<Handle> OpenFileFromArchive(ArchiveHandle archive_handle, const FileSy
     std::unique_ptr<FileSys::FileBackend> backend = archive->backend->OpenFile(path, mode);
     if (backend == nullptr) {
         return ResultCode(ErrorDescription::FS_NotFound, ErrorModule::FS,
-                          ErrorSummary::NotFound, ErrorLevel::Permanent);
+                          ErrorSummary::NotFound, ErrorLevel::Status);
     }
 
     auto file = std::make_unique<File>(std::move(backend), path);
