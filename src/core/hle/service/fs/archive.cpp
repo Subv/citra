@@ -136,6 +136,13 @@ public:
             break;
         }
 
+        case FileCommand::Flush:
+        {
+            LOG_TRACE(Service_FS, "Flush");
+            backend->Flush();
+            break;
+        }
+
         // Unknown command...
         default:
             LOG_ERROR(Service_FS, "Unknown command=0x%08X!", cmd);

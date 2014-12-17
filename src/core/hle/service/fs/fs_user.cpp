@@ -412,6 +412,21 @@ static void FormatSaveData(Service::Interface* self) {
     cmd_buff[1] = FormatSaveData().raw;
 }
 
+/**
+ * FS_User::FormatThisUserSaveData service function
+ *  Inputs:
+ *  Outputs:
+ *      1 : Result of function, 0 on success, otherwise error code
+ */
+static void FormatThisUserSaveData(Service::Interface* self) {
+    u32* cmd_buff = Kernel::GetCommandBuffer();
+    LOG_DEBUG(Service_FS, "(STUBBED)");
+
+    // TODO(Subv): Find out what the inputs and outputs of this function are
+
+    cmd_buff[1] = FormatSaveData().raw;
+}
+
 const FSUserInterface::FunctionInfo FunctionTable[] = {
     {0x000100C6, nullptr,               "Dummy1"},
     {0x040100C4, nullptr,               "Control"},
@@ -429,7 +444,7 @@ const FSUserInterface::FunctionInfo FunctionTable[] = {
     {0x080C00C2, OpenArchive,           "OpenArchive"},
     {0x080D0144, nullptr,               "ControlArchive"},
     {0x080E0080, CloseArchive,          "CloseArchive"},
-    {0x080F0180, nullptr,               "FormatThisUserSaveData"},
+    {0x080F0180, FormatThisUserSaveData,"FormatThisUserSaveData"},
     {0x08100200, nullptr,               "CreateSystemSaveData"},
     {0x08110040, nullptr,               "DeleteSystemSaveData"},
     {0x08120080, nullptr,               "GetFreeBytes"},

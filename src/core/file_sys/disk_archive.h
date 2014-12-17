@@ -59,6 +59,10 @@ public:
     size_t GetSize() const override;
     bool SetSize(const u64 size) const override;
     bool Close() const override;
+    
+    void Flush() const override {
+        file->Flush();
+    }
 
 protected:
     const DiskArchive* archive;
