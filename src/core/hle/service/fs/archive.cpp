@@ -234,7 +234,7 @@ ResultVal<ArchiveHandle> OpenArchive(ArchiveIdCode id_code) {
             // Returning the NotFormatted error code will signal the game to provision the SaveData archive 
             // with the files and folders that it expects. 
             // The FormatSaveData service call will create the SaveData archive when it is called.
-            return ResultCode(ErrorDescription::NotFormatted, ErrorModule::FS,
+            return ResultCode(ErrorDescription::FS_NotFormatted, ErrorModule::FS,
                               ErrorSummary::InvalidState, ErrorLevel::Status);
         }
         // TODO: Verify error against hardware
@@ -277,7 +277,7 @@ ResultVal<Handle> OpenFileFromArchive(ArchiveHandle archive_handle, const FileSy
 
     std::unique_ptr<FileSys::FileBackend> backend = archive->backend->OpenFile(path, mode);
     if (backend == nullptr) {
-        return ResultCode(ErrorDescription::NotFound, ErrorModule::FS,
+        return ResultCode(ErrorDescription::FS_NotFound, ErrorModule::FS,
                           ErrorSummary::NotFound, ErrorLevel::Permanent);
     }
 
