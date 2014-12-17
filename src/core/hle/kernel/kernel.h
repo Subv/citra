@@ -154,7 +154,7 @@ extern Handle g_main_thread;
 /// The ID code of the currently running game
 /// TODO(Subv): This variable should not be here, 
 /// we need a way to store information about the currently loaded application 
-/// for later query during runtime
+/// for later query during runtime, maybe using the LDR service?
 extern u64 g_program_id;
 
 /// Initialize the kernel
