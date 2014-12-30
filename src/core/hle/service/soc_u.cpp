@@ -219,17 +219,17 @@ union CTRSockAddr {
 
         // We can not guarantee ABI compatibility between platforms so we copy the fields manually
         switch (result.sa_family) {
-            case AF_INET:
-            {
-                sockaddr_in* result_in = reinterpret_cast<sockaddr_in*>(&result);
-                result_in->sin_port = ctr_addr.in.sin_port;
-                result_in->sin_addr.s_addr = ctr_addr.in.sin_addr;
-                memset(result_in->sin_zero, 0, sizeof(result_in->sin_zero));
-                break;
-            }
-            default:
-                _dbg_assert_msg_(Service_SOC, false, "Unhandled address family (sa_family) in CTRSockAddr::ToPlatform");
-                break;
+        case AF_INET:
+        {
+            sockaddr_in* result_in = reinterpret_cast<sockaddr_in*>(&result);
+            result_in->sin_port = ctr_addr.in.sin_port;
+            result_in->sin_addr.s_addr = ctr_addr.in.sin_addr;
+            memset(result_in->sin_zero, 0, sizeof(result_in->sin_zero));
+            break;
+        }
+        default:
+            _dbg_assert_msg_(Service_SOC, false, "Unhandled address family (sa_family) in CTRSockAddr::ToPlatform");
+            break;
         }
         return result;
     }
@@ -240,17 +240,17 @@ union CTRSockAddr {
         result.raw.sa_family = static_cast<u8>(addr.sa_family);
         // We can not guarantee ABI compatibility between platforms so we copy the fields manually
         switch (result.raw.sa_family) {
-            case AF_INET:
-            {
-                sockaddr_in const* addr_in = reinterpret_cast<sockaddr_in const*>(&addr);
-                result.raw.len = sizeof(CTRSockAddrIn);
-                result.in.sin_port = addr_in->sin_port;
-                result.in.sin_addr = addr_in->sin_addr.s_addr;
-                break;
-            }
-            default:
-                _dbg_assert_msg_(Service_SOC, false, "Unhandled address family (sa_family) in CTRSockAddr::ToPlatform");
-                break;
+        case AF_INET:
+        {
+            sockaddr_in const* addr_in = reinterpret_cast<sockaddr_in const*>(&addr);
+            result.raw.len = sizeof(CTRSockAddrIn);
+            result.in.sin_port = addr_in->sin_port;
+            result.in.sin_addr = addr_in->sin_addr.s_addr;
+            break;
+        }
+        default:
+            _dbg_assert_msg_(Service_SOC, false, "Unhandled address family (sa_family) in CTRSockAddr::ToPlatform");
+            break;
         }
         return result;
     }
