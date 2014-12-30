@@ -7,7 +7,6 @@
 #if EMU_PLATFORM == PLATFORM_WINDOWS
 #include <winsock2.h>
 #include <ws2tcpip.h>
-#include <unordered_map>
 #else
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -21,16 +20,18 @@
 #include "common/scope_exit.h"
 #include "core/hle/hle.h"
 #include "core/hle/service/soc_u.h"
+#include <unordered_map>
 
 #if EMU_PLATFORM == PLATFORM_WINDOWS
-#    define WSAEAGAIN     WSAEWOULDBLOCK
-#    define WSAEMULTIHOP  -1 // Invalid dummy value
-#    define ERRNO(x)      WSA##x
-#    define GET_ERRNO     WSAGetLastError()
-#    define poll(x, y, z) WSAPoll(x, y, z);
+#    define WSAEAGAIN      WSAEWOULDBLOCK
+#    define WSAEMULTIHOP   -1 // Invalid dummy value
+#    define ERRNO(x)       WSA##x
+#    define GET_ERRNO      WSAGetLastError()
+#    define poll(x, y, z)  WSAPoll(x, y, z);
 #else
-#    define ERRNO(x)      x
-#    define GET_ERRNO     errno
+#    define ERRNO(x)       x
+#    define GET_ERRNO      errno
+#    define closesocket(x) close(x)
 #endif
 
 static const s32 SOCKET_ERROR_VALUE = -1;
@@ -128,6 +129,12 @@ static int TranslateError(int error) {
     
     return error;
 }
+
+/// Holds information about a particular socket
+struct SocketHolder {
+    u32 socket_fd; ///< The socket descriptor
+    bool blocking; ///< Whether the socket is blocking or not, it is only read on Windows.
+};
 
 /// Structure to represent the 3ds' pollfd structure, which is different than most implementations
 struct CTRPollFD {
@@ -261,11 +268,15 @@ union CTRSockAddr {
     }
 };
 
-#if EMU_PLATFORM == PLATFORM_WINDOWS
-/// Holds info about whether a specific socket is blocking or not
-/// This only exists on Windows because it has no way of querying if a socket is blocking or not
-std::unordered_map<u32, bool> socket_blocking;
-#endif
+/// Holds info about the currently open sockets
+static std::unordered_map<u32, SocketHolder> open_sockets;
+
+/// Close all open sockets
+static void CleanupSockets() {
+    for (auto sock : open_sockets)
+        closesocket(sock.second.socket_fd);
+    open_sockets.clear();
+}
 
 static void Socket(Service::Interface* self) {
     u32* cmd_buffer = Kernel::GetCommandBuffer();
@@ -291,10 +302,8 @@ static void Socket(Service::Interface* self) {
 
     u32 socket_handle = static_cast<u32>(::socket(domain, type, protocol));
 
-#if EMU_PLATFORM == PLATFORM_WINDOWS
     if (socket_handle != SOCKET_ERROR_VALUE)
-        socket_blocking[socket_handle] = true;
-#endif
+        open_sockets[socket_handle] = { socket_handle, true };
 
     int result = 0;
     if (socket_handle == SOCKET_ERROR_VALUE)
@@ -343,8 +352,8 @@ static void Fcntl(Service::Interface* self) {
     if (ctr_cmd == 3) { // F_GETFL
 #if EMU_PLATFORM == PLATFORM_WINDOWS
         posix_ret = 0;
-        auto iter = socket_blocking.find(socket_handle);
-        if (iter != socket_blocking.end() && iter->second == false)
+        auto iter = open_sockets.find(socket_handle);
+        if (iter != open_sockets.end() && iter->second.blocking == false)
             posix_ret |= 4; // O_NONBLOCK
 #else
         int ret = ::fcntl(socket_handle, F_GETFL, 0);
@@ -366,7 +375,9 @@ static void Fcntl(Service::Interface* self) {
             posix_ret = -1;
             return;
         }
-        socket_blocking[socket_handle] = (tmp == 0);
+        auto iter = open_sockets.find(socket_handle);
+        if (iter != open_sockets.end())
+            iter->second.blocking = (tmp == 0);
 #else
         int flags = ::fcntl(socket_handle, F_GETFL, 0);
         if (flags == SOCKET_ERROR_VALUE) {
@@ -416,10 +427,8 @@ static void Accept(Service::Interface* self) {
     socklen_t addr_len = sizeof(addr);
     u32 ret = static_cast<u32>(::accept(socket_handle, &addr, &addr_len));
     
-#if EMU_PLATFORM == PLATFORM_WINDOWS
     if (ret != SOCKET_ERROR_VALUE)
-        socket_blocking[ret] = true;
-#endif
+        open_sockets[ret] = { ret, true };
 
     int result = 0;
     if (ret == SOCKET_ERROR_VALUE) {
@@ -450,12 +459,9 @@ static void Close(Service::Interface* self) {
     u32 socket_handle = cmd_buffer[1];
 
     int ret = 0;
-#if EMU_PLATFORM == PLATFORM_WINDOWS
-    ret = ::closesocket(socket_handle);
-    socket_blocking.erase(socket_handle);
-#else
-    ret = ::close(socket_handle);
-#endif
+    open_sockets.erase(socket_handle);
+
+    ret = closesocket(socket_handle);
 
     int result = 0;
     if (ret != 0)
@@ -648,9 +654,10 @@ static void InitializeSockets(Service::Interface* self) {
 
 static void ShutdownSockets(Service::Interface* self) {
     // TODO(Subv): Implement
+    CleanupSockets();
+
 #if EMU_PLATFORM == PLATFORM_WINDOWS
     WSACleanup();
-    socket_blocking.clear();
 #endif
 
     u32* cmd_buffer = Kernel::GetCommandBuffer();
@@ -699,9 +706,9 @@ Interface::Interface() {
 }
 
 Interface::~Interface() {
+    CleanupSockets();
 #if EMU_PLATFORM == PLATFORM_WINDOWS
     WSACleanup();
-    socket_blocking.clear();
 #endif
 }
 
