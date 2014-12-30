@@ -353,32 +353,32 @@ static void Fcntl(Service::Interface* self) {
 #endif
     } else if (ctr_cmd == 4) { // F_SETFL
 #if EMU_PLATFORM == PLATFORM_WINDOWS
-    unsigned long tmp = (ctr_arg & 4 /* O_NONBLOCK */) ? 1 : 0;
-    int ret = ioctlsocket(socket_handle, FIONBIO, &tmp);
-    if (ret == SOCKET_ERROR_VALUE) {
-        result = TranslateError(GET_ERRNO);
-        posix_ret = -1;
-        return;
-    }
-    socket_blocking[socket_handle] = tmp == 0;
+        unsigned long tmp = (ctr_arg & 4 /* O_NONBLOCK */) ? 1 : 0;
+        int ret = ioctlsocket(socket_handle, FIONBIO, &tmp);
+        if (ret == SOCKET_ERROR_VALUE) {
+            result = TranslateError(GET_ERRNO);
+            posix_ret = -1;
+            return;
+        }
+        socket_blocking[socket_handle] = tmp == 0;
 #else
-    int flags = ::fcntl(socket_handle, F_GETFL, 0);
-    if (flags == SOCKET_ERROR_VALUE) {
-        result = TranslateError(GET_ERRNO);
-        posix_ret = -1;
-        return;
-    }
+        int flags = ::fcntl(socket_handle, F_GETFL, 0);
+        if (flags == SOCKET_ERROR_VALUE) {
+            result = TranslateError(GET_ERRNO);
+            posix_ret = -1;
+            return;
+        }
  
-    flags &= ~O_NONBLOCK;
-    if (ctr_arg & 4) // O_NONBLOCK
-        flags |= O_NONBLOCK;
+        flags &= ~O_NONBLOCK;
+        if (ctr_arg & 4) // O_NONBLOCK
+            flags |= O_NONBLOCK;
  
-    int ret = ::fcntl(socket_handle, F_SETFL, flags);
-    if (ret == SOCKET_ERROR_VALUE) {
-        result = TranslateError(GET_ERRNO);
-        posix_ret = -1;
-        return;
-    }
+        int ret = ::fcntl(socket_handle, F_SETFL, flags);
+        if (ret == SOCKET_ERROR_VALUE) {
+            result = TranslateError(GET_ERRNO);
+            posix_ret = -1;
+            return;
+        }
 #endif
     } else {
         LOG_ERROR(Service_SOC, "Unsupported command (%d) in fcntl call");
