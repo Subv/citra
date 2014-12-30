@@ -147,6 +147,7 @@ struct CTRPollFD {
         BitField<3, 1, u32> pollerr;
         BitField<4, 1, u32> pollout;
         BitField<5, 1, u32> pollnval;
+        u32 hex; ///< The complete value formed by the flags
 
         /// Translates the resulting events of a Poll operation from platform-specific to 3ds specific
         static Events TranslateTo3DS(u32 input_event) {
@@ -190,8 +191,8 @@ struct CTRPollFD {
     /// Converts a platform-specific pollfd to a 3ds specific structure
     static CTRPollFD FromPlatform(pollfd const& fd) {
         CTRPollFD result;
-        result.events = Events::TranslateTo3DS(fd.events);
-        result.revents = Events::TranslateTo3DS(fd.revents);
+        result.events.hex = Events::TranslateTo3DS(fd.events).hex;
+        result.revents.hex = Events::TranslateTo3DS(fd.revents).hex;
         result.fd = static_cast<u32>(fd.fd);
         return result;
     }
