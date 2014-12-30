@@ -426,6 +426,9 @@ static void Listen(Service::Interface* self) {
 }
 
 static void Accept(Service::Interface* self) {
+    // TODO(Subv): Calling this function on a blocking socket will block the emu thread, 
+    // preventing graceful shutdown when closing the emulator, this can be fixed by always 
+    // performing nonblocking operations and spinlock until the data is available
     u32* cmd_buffer = Kernel::GetCommandBuffer();
     u32 socket_handle = cmd_buffer[1];
     socklen_t max_addr_len = static_cast<socklen_t>(cmd_buffer[2]);
@@ -509,6 +512,9 @@ static void SendTo(Service::Interface* self) {
 }
 
 static void RecvFrom(Service::Interface* self) {
+    // TODO(Subv): Calling this function on a blocking socket will block the emu thread, 
+    // preventing graceful shutdown when closing the emulator, this can be fixed by always 
+    // performing nonblocking operations and spinlock until the data is available
     u32* cmd_buffer = Kernel::GetCommandBuffer();
     u32 socket_handle = cmd_buffer[1];
     u32 len = cmd_buffer[2];
@@ -628,6 +634,9 @@ static void GetPeerName(Service::Interface* self) {
 }
 
 static void Connect(Service::Interface* self) {
+    // TODO(Subv): Calling this function on a blocking socket will block the emu thread, 
+    // preventing graceful shutdown when closing the emulator, this can be fixed by always 
+    // performing nonblocking operations and spinlock until the data is available
     u32* cmd_buffer = Kernel::GetCommandBuffer();
     u32 socket_handle = cmd_buffer[1];
     socklen_t len = cmd_buffer[2];
