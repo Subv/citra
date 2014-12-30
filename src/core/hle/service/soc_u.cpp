@@ -263,7 +263,7 @@ std::unordered_map<u32, bool> socket_blocking;
 #endif
 
 static void Socket(Service::Interface* self) {
-    u32* cmd_buffer = Service::GetCommandBuffer();
+    u32* cmd_buffer = Kernel::GetCommandBuffer();
     u32 domain = cmd_buffer[1]; // Address family
     u32 type = cmd_buffer[2];
     u32 protocol = cmd_buffer[3];
@@ -299,7 +299,7 @@ static void Socket(Service::Interface* self) {
 }
 
 static void Bind(Service::Interface* self) {
-    u32* cmd_buffer = Service::GetCommandBuffer();
+    u32* cmd_buffer = Kernel::GetCommandBuffer();
     u32 socket_handle = cmd_buffer[1];
     u32 len = cmd_buffer[2];
     CTRSockAddr* ctr_sock_addr = reinterpret_cast<CTRSockAddr*>(Memory::GetPointer(cmd_buffer[6]));
@@ -322,7 +322,7 @@ static void Bind(Service::Interface* self) {
 }
 
 static void Fcntl(Service::Interface* self) {
-	u32* cmd_buffer = Service::GetCommandBuffer();
+	u32* cmd_buffer = Kernel::GetCommandBuffer();
 	u32 socket_handle = cmd_buffer[1];
 	u32 ctr_cmd = cmd_buffer[2];
 	u32 ctr_arg = cmd_buffer[3];
@@ -389,7 +389,7 @@ static void Fcntl(Service::Interface* self) {
 }
 
 static void Listen(Service::Interface* self) {
-    u32* cmd_buffer = Service::GetCommandBuffer();
+    u32* cmd_buffer = Kernel::GetCommandBuffer();
     u32 socket_handle = cmd_buffer[1];
     u32 backlog = cmd_buffer[2];
 
@@ -403,7 +403,7 @@ static void Listen(Service::Interface* self) {
 }
 
 static void Accept(Service::Interface* self) {
-    u32* cmd_buffer = Service::GetCommandBuffer();
+    u32* cmd_buffer = Kernel::GetCommandBuffer();
     u32 socket_handle = cmd_buffer[1];
     socklen_t max_addr_len = static_cast<socklen_t>(cmd_buffer[2]);
     sockaddr addr;
@@ -427,7 +427,7 @@ static void Accept(Service::Interface* self) {
 }
 
 static void GetHostId(Service::Interface* self) {
-    u32* cmd_buffer = Service::GetCommandBuffer();
+    u32* cmd_buffer = Kernel::GetCommandBuffer();
 
     char name[128];
     gethostname(name, sizeof(name));
@@ -439,7 +439,7 @@ static void GetHostId(Service::Interface* self) {
 }
 
 static void Close(Service::Interface* self) {
-    u32* cmd_buffer = Service::GetCommandBuffer();
+    u32* cmd_buffer = Kernel::GetCommandBuffer();
     u32 socket_handle = cmd_buffer[1];
 
     int ret = 0;
@@ -459,7 +459,7 @@ static void Close(Service::Interface* self) {
 }
 
 static void SendTo(Service::Interface* self) {
-    u32* cmd_buffer = Service::GetCommandBuffer();
+    u32* cmd_buffer = Kernel::GetCommandBuffer();
     u32 socket_handle = cmd_buffer[1];
     u32 len = cmd_buffer[2];
     u32 flags = cmd_buffer[3];
@@ -486,7 +486,7 @@ static void SendTo(Service::Interface* self) {
 }
 
 static void RecvFrom(Service::Interface* self) {
-    u32* cmd_buffer = Service::GetCommandBuffer();
+    u32* cmd_buffer = Kernel::GetCommandBuffer();
     u32 socket_handle = cmd_buffer[1];
     u32 len = cmd_buffer[2];
     u32 flags = cmd_buffer[3];
@@ -510,7 +510,7 @@ static void RecvFrom(Service::Interface* self) {
 }
 
 static void Poll(Service::Interface* self) {
-    u32* cmd_buffer = Service::GetCommandBuffer();
+    u32* cmd_buffer = Kernel::GetCommandBuffer();
     u32 nfds = cmd_buffer[1];
     int timeout = cmd_buffer[2];
     CTRPollFD* input_fds = reinterpret_cast<CTRPollFD*>(Memory::GetPointer(cmd_buffer[6]));
@@ -539,7 +539,7 @@ static void Poll(Service::Interface* self) {
 }
 
 static void GetSockName(Service::Interface* self) {
-    u32* cmd_buffer = Service::GetCommandBuffer();
+    u32* cmd_buffer = Kernel::GetCommandBuffer();
     u32 socket_handle = cmd_buffer[1];
     socklen_t ctr_len = cmd_buffer[2];
 
@@ -565,7 +565,7 @@ static void GetSockName(Service::Interface* self) {
 }
 
 static void Shutdown(Service::Interface* self) {
-    u32* cmd_buffer = Service::GetCommandBuffer();
+    u32* cmd_buffer = Kernel::GetCommandBuffer();
     u32 socket_handle = cmd_buffer[1];
     int how = cmd_buffer[2];
 
@@ -578,7 +578,7 @@ static void Shutdown(Service::Interface* self) {
 }
 
 static void GetPeerName(Service::Interface* self) {
-    u32* cmd_buffer = Service::GetCommandBuffer();
+    u32* cmd_buffer = Kernel::GetCommandBuffer();
     u32 socket_handle = cmd_buffer[1];
     socklen_t len = cmd_buffer[2];
 
@@ -604,7 +604,7 @@ static void GetPeerName(Service::Interface* self) {
 }
 
 static void Connect(Service::Interface* self) {
-    u32* cmd_buffer = Service::GetCommandBuffer();
+    u32* cmd_buffer = Kernel::GetCommandBuffer();
     u32 socket_handle = cmd_buffer[1];
     socklen_t len = cmd_buffer[2];
 
@@ -630,7 +630,7 @@ static void InitializeSockets(Service::Interface* self) {
     WSAStartup(MAKEWORD(2, 2), &data);
 #endif
 
-    u32* cmd_buffer = Service::GetCommandBuffer();
+    u32* cmd_buffer = Kernel::GetCommandBuffer();
     cmd_buffer[1] = 0;
 }
 
@@ -641,7 +641,7 @@ static void ShutdownSockets(Service::Interface* self) {
     socket_blocking.clear();
 #endif
 
-    u32* cmd_buffer = Service::GetCommandBuffer();
+    u32* cmd_buffer = Kernel::GetCommandBuffer();
     cmd_buffer[1] = 0;
 }
 
