@@ -40,9 +40,8 @@ static const s32 SOCKET_ERROR_VALUE = -1;
 
 namespace SOC_U {
 
-static const u32 error_map_size = 77;
 /// Holds the translation from system network errors to 3DS network errors
-static const std::array<std::pair<int, int>, error_map_size> error_map = { {
+static const std::unordered_map<int, int> error_map = { {
     { E2BIG, 1 },
     { ERRNO(EACCES), 2 },
     { ERRNO(EADDRINUSE), 3 },
@@ -123,10 +122,7 @@ static const std::array<std::pair<int, int>, error_map_size> error_map = { {
 
 /// Converts a network error from platform-specific to 3ds-specific
 static int TranslateError(int error) {
-    auto found = std::find_if(error_map.begin(), error_map.end(), [error](std::pair<int, int> const& eqivalence) {
-        return eqivalence.first == error; 
-    });
-
+    auto found = error_map.find(error);
     if (found != error_map.end())
         return -found->second;
     
@@ -136,50 +132,59 @@ static int TranslateError(int error) {
 /// Structure to represent the 3ds' pollfd structure, which is different than most implementations
 struct CTRPollFD {
     u32 fd; ///< Socket handle
-    u32 events; ///< Events to poll for (input)
-    u32 revents; ///< Events received (output)
 
-    /// Translates the resulting events of a Poll operation from platform-specific to 3ds specific
-    static u32 TranslatePollEventTo3DS(u32 input_event) {
-        u32 ret = 0;
-        if (input_event & POLLIN)
-            ret |= 0x01;
-        if (input_event & POLLPRI)
-            ret |= 0x02;
-        if (input_event & POLLHUP)
-            ret |= 0x04;
-        if (input_event & POLLERR)
-            ret |= 0x08;
-        if (input_event & POLLOUT)
-            ret |= 0x10;
-        if (input_event & POLLNVAL)
-            ret |= 0x20;
-        return ret;
-    }
+    union Events {
+        BitField<0, 1, u32> pollin;
+        BitField<1, 1, u32> pollpri;
+        BitField<2, 1, u32> pollhup;
+        BitField<3, 1, u32> pollerr;
+        BitField<4, 1, u32> pollout;
+        BitField<5, 1, u32> pollnval;
 
-    /// Translates the resulting events of a Poll operation from 3ds specific to platform specific
-    static u32 TranslatePollEventToPlatform(u32 input_event) {
-        u32 ret = 0;
-        if (input_event & 0x01)
-            ret |= POLLIN;
-        if (input_event & 0x02)
-            ret |= POLLPRI;
-        if (input_event & 0x04)
-            ret |= POLLHUP;
-        if (input_event & 0x08)
-            ret |= POLLERR;
-        if (input_event & 0x10)
-            ret |= POLLOUT;
-        if (input_event & 0x20)
-            ret |= POLLNVAL;
-        return ret;
-    }
+        /// Translates the resulting events of a Poll operation from platform-specific to 3ds specific
+        static Events TranslateTo3DS(u32 input_event) {
+            Events ev = {};
+            if (input_event & POLLIN)
+                ev.pollin = 1;
+            if (input_event & POLLPRI)
+                ev.pollpri = 1;
+            if (input_event & POLLHUP)
+                ev.pollhup = 1;
+            if (input_event & POLLERR)
+                ev.pollerr = 1;
+            if (input_event & POLLOUT)
+                ev.pollout = 1;
+            if (input_event & POLLNVAL)
+                ev.pollnval = 1;
+            return ev;
+        }
+
+        /// Translates the resulting events of a Poll operation from 3ds specific to platform specific
+        static u32 TranslateToPlatform(Events input_event) {
+            u32 ret = 0;
+            if (input_event.pollin)
+                ret |= POLLIN;
+            if (input_event.pollpri)
+                ret |= POLLPRI;
+            if (input_event.pollhup)
+                ret |= POLLHUP;
+            if (input_event.pollerr)
+                ret |= POLLERR;
+            if (input_event.pollout)
+                ret |= POLLOUT;
+            if (input_event.pollnval)
+                ret |= POLLNVAL;
+            return ret;
+        }
+    };
+    Events events; ///< Events to poll for (input)
+    Events revents; ///< Events received (output)
 
     /// Converts a platform-specific pollfd to a 3ds specific structure
     static CTRPollFD FromPlatform(pollfd const& fd) {
         CTRPollFD result;
-        result.events = TranslatePollEventTo3DS(fd.events);
-        result.revents = TranslatePollEventTo3DS(fd.revents);
+        result.events = Events::TranslateTo3DS(fd.events);
+        result.revents = Events::TranslateTo3DS(fd.revents);
         result.fd = static_cast<u32>(fd.fd);
         return result;
     }
@@ -187,8 +192,8 @@ struct CTRPollFD {
     /// Converts a 3ds specific pollfd to a platform-specific structure
     static pollfd ToPlatform(CTRPollFD const& fd) {
         pollfd result;
-        result.events = TranslatePollEventToPlatform(fd.events);
-        result.revents = TranslatePollEventToPlatform(fd.revents);
+        result.events = Events::TranslateToPlatform(fd.events);
+        result.revents = Events::TranslateToPlatform(fd.revents);
         result.fd = fd.fd;
         return result;
     }
@@ -219,7 +224,8 @@ union CTRSockAddr {
 
         // We can not guarantee ABI compatibility between platforms so we copy the fields manually
         switch (result.sa_family) {
-        case AF_INET: {
+        case AF_INET:
+        {
             sockaddr_in* result_in = reinterpret_cast<sockaddr_in*>(&result);
             result_in->sin_port = ctr_addr.in.sin_port;
             result_in->sin_addr.s_addr = ctr_addr.in.sin_addr;
@@ -239,7 +245,8 @@ union CTRSockAddr {
         result.raw.sa_family = static_cast<u8>(addr.sa_family);
         // We can not guarantee ABI compatibility between platforms so we copy the fields manually
         switch (result.raw.sa_family) {
-        case AF_INET: {
+        case AF_INET:
+        {
             sockaddr_in const* addr_in = reinterpret_cast<sockaddr_in const*>(&addr);
             result.raw.len = sizeof(CTRSockAddrIn);
             result.in.sin_port = addr_in->sin_port;
@@ -266,6 +273,7 @@ static void Socket(Service::Interface* self) {
     u32 type = cmd_buffer[2];
     u32 protocol = cmd_buffer[3];
 
+    // Only 0 is allowed according to 3dbrew, using 0 will let the OS decide which protocol to use
     if (protocol != 0) {
         cmd_buffer[1] = UnimplementedFunction(ErrorModule::SOC).raw; // TODO(Subv): Correct error code
         return;
@@ -358,7 +366,7 @@ static void Fcntl(Service::Interface* self) {
             posix_ret = -1;
             return;
         }
-        socket_blocking[socket_handle] = tmp == 0;
+        socket_blocking[socket_handle] = (tmp == 0);
 #else
         int flags = ::fcntl(socket_handle, F_GETFL, 0);
         if (flags == SOCKET_ERROR_VALUE) {
@@ -380,7 +388,7 @@ static void Fcntl(Service::Interface* self) {
 #endif
     } else {
         LOG_ERROR(Service_SOC, "Unsupported command (%d) in fcntl call");
-        result = TranslateError(EINVAL); // TODO: Or something
+        result = TranslateError(EINVAL); // TODO: Find the correct error
         posix_ret = -1;
         return;
     }
@@ -405,8 +413,8 @@ static void Accept(Service::Interface* self) {
     u32 socket_handle = cmd_buffer[1];
     socklen_t max_addr_len = static_cast<socklen_t>(cmd_buffer[2]);
     sockaddr addr;
-
-    u32 ret = static_cast<u32>(::accept(socket_handle, &addr, &max_addr_len));
+    socklen_t addr_len = sizeof(addr);
+    u32 ret = static_cast<u32>(::accept(socket_handle, &addr, &addr_len));
     
 #if EMU_PLATFORM == PLATFORM_WINDOWS
     if (ret != SOCKET_ERROR_VALUE)
@@ -414,11 +422,12 @@ static void Accept(Service::Interface* self) {
 #endif
 
     int result = 0;
-    if (ret == SOCKET_ERROR_VALUE)
+    if (ret == SOCKET_ERROR_VALUE) {
         result = TranslateError(GET_ERRNO);
-
-    CTRSockAddr ctr_addr = CTRSockAddr::FromPlatform(addr);
-    Memory::WriteBlock(cmd_buffer[0x104 >> 2], (const u8*)&ctr_addr, max_addr_len);
+    } else {
+        CTRSockAddr ctr_addr = CTRSockAddr::FromPlatform(addr);
+        Memory::WriteBlock(cmd_buffer[0x104 >> 2], (const u8*)&ctr_addr, max_addr_len);
+    }
 
     cmd_buffer[2] = ret;
     cmd_buffer[1] = result;
@@ -466,9 +475,13 @@ static void SendTo(Service::Interface* self) {
     u8* input_buff = Memory::GetPointer(cmd_buffer[8]);
     CTRSockAddr* ctr_dest_addr = reinterpret_cast<CTRSockAddr*>(Memory::GetPointer(cmd_buffer[10]));
 
-    int ret = -1;
+    if (ctr_dest_addr == nullptr) {
+        cmd_buffer[1] = -1; // TODO(Subv): Find the right error code
+        return;
+    }
 
-    if (ctr_dest_addr != nullptr) {
+    int ret = -1;
+    if (addr_len > 0) {
         sockaddr dest_addr = CTRSockAddr::ToPlatform(*ctr_dest_addr);
         ret = ::sendto(socket_handle, (const char*)input_buff, len, flags, &dest_addr, sizeof(dest_addr));
     } else {
@@ -491,13 +504,14 @@ static void RecvFrom(Service::Interface* self) {
     socklen_t addr_len = static_cast<socklen_t>(cmd_buffer[4]);
 
     u8* output_buff = Memory::GetPointer(cmd_buffer[0x104 >> 2]);
-    CTRSockAddr* ctr_src_addr = reinterpret_cast<CTRSockAddr*>(Memory::GetPointer(cmd_buffer[0x1A0 >> 2]));
     sockaddr src_addr;
     socklen_t src_addr_len = sizeof(src_addr);
     int ret = ::recvfrom(socket_handle, (char*)output_buff, len, flags, &src_addr, &src_addr_len);
 
-    if (ctr_src_addr != nullptr)
+    if (cmd_buffer[0x1A0 >> 2] != 0) {
+        CTRSockAddr* ctr_src_addr = reinterpret_cast<CTRSockAddr*>(Memory::GetPointer(cmd_buffer[0x1A0 >> 2]));
         *ctr_src_addr = CTRSockAddr::FromPlatform(src_addr);
+    }
 
     int result = 0;
     if (ret == SOCKET_ERROR_VALUE)
