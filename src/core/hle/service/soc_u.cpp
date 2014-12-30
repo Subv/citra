@@ -149,6 +149,11 @@ struct CTRPollFD {
         BitField<4, 1, u32> pollout;
         BitField<5, 1, u32> pollnval;
 
+        Events& operator=(const Events& other) {
+            hex = other.hex;
+            return *this;
+        }
+
         /// Translates the resulting events of a Poll operation from platform-specific to 3ds specific
         static Events TranslateTo3DS(u32 input_event) {
             Events ev = {};
