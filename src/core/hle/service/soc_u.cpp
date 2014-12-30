@@ -322,70 +322,70 @@ static void Bind(Service::Interface* self) {
 }
 
 static void Fcntl(Service::Interface* self) {
-	u32* cmd_buffer = Kernel::GetCommandBuffer();
-	u32 socket_handle = cmd_buffer[1];
-	u32 ctr_cmd = cmd_buffer[2];
-	u32 ctr_arg = cmd_buffer[3];
+    u32* cmd_buffer = Kernel::GetCommandBuffer();
+    u32 socket_handle = cmd_buffer[1];
+    u32 ctr_cmd = cmd_buffer[2];
+    u32 ctr_arg = cmd_buffer[3];
  
-	int result = 0;
-	u32 posix_ret = 0; // TODO: Check what hardware returns for F_SETFL (unspecified by POSIX)
-	SCOPE_EXIT({
-		cmd_buffer[1] = result;
-		cmd_buffer[2] = posix_ret;
-	});
+    int result = 0;
+    u32 posix_ret = 0; // TODO: Check what hardware returns for F_SETFL (unspecified by POSIX)
+    SCOPE_EXIT({
+            cmd_buffer[1] = result;
+            cmd_buffer[2] = posix_ret;
+    });
  
-	if (ctr_cmd == 3) { // F_GETFL
+    if (ctr_cmd == 3) { // F_GETFL
 #if EMU_PLATFORM == PLATFORM_WINDOWS
-		posix_ret = 0;
+        posix_ret = 0;
         auto iter = socket_blocking.find(socket_handle);
-		if (iter != socket_blocking.end() && iter->second == false)
-			posix_ret |= 4; // O_NONBLOCK
+        if (iter != socket_blocking.end() && iter->second == false)
+            posix_ret |= 4; // O_NONBLOCK
 #else
-		int ret = ::fcntl(socket_handle, F_GETFL, 0);
-		if (ret == SOCKET_ERROR_VALUE) {
-			result = TranslateError(GET_ERRNO);
+        int ret = ::fcntl(socket_handle, F_GETFL, 0);
+        if (ret == SOCKET_ERROR_VALUE) {
+            result = TranslateError(GET_ERRNO);
             posix_ret = -1;
-			return;
-		}
-		posix_ret = 0;
-		if (ret & O_NONBLOCK)
-			posix_ret |= 4; // O_NONBLOCK
+            return;
+        }
+        posix_ret = 0;
+        if (ret & O_NONBLOCK)
+            posix_ret |= 4; // O_NONBLOCK
 #endif
-	} else if (ctr_cmd == 4) { // F_SETFL
+    } else if (ctr_cmd == 4) { // F_SETFL
 #if EMU_PLATFORM == PLATFORM_WINDOWS
-		unsigned long tmp = (ctr_arg & 4 /* O_NONBLOCK */) ? 1 : 0;
-		int ret = ioctlsocket(socket_handle, FIONBIO, &tmp);
-		if (ret == SOCKET_ERROR_VALUE) {
-			result = TranslateError(GET_ERRNO);
-            posix_ret = -1;
-			return;
-		}
-        socket_blocking[socket_handle] = tmp == 0;
-#else
-		int flags = ::fcntl(socket_handle, F_GETFL, 0);
-		if (flags == SOCKET_ERROR_VALUE) {
-			result = TranslateError(GET_ERRNO);
-            posix_ret = -1;
-			return;
-		}
- 
-		flags &= ~O_NONBLOCK;
-		if (ctr_arg & 4) // O_NONBLOCK
-			flags |= O_NONBLOCK;
- 
-		int ret = ::fcntl(socket_handle, F_SETFL, flags);
-		if (ret == SOCKET_ERROR_VALUE) {
-			result = TranslateError(GET_ERRNO);
-            posix_ret = -1;
-			return;
-		}
-#endif
-	} else {
-		LOG_ERROR(Service_SOC, "Unsupported command (%d) in fcntl call");
-		result = TranslateError(EINVAL); // TODO: Or something
+    unsigned long tmp = (ctr_arg & 4 /* O_NONBLOCK */) ? 1 : 0;
+    int ret = ioctlsocket(socket_handle, FIONBIO, &tmp);
+    if (ret == SOCKET_ERROR_VALUE) {
+        result = TranslateError(GET_ERRNO);
         posix_ret = -1;
-		return;
-	}
+        return;
+    }
+    socket_blocking[socket_handle] = tmp == 0;
+#else
+    int flags = ::fcntl(socket_handle, F_GETFL, 0);
+    if (flags == SOCKET_ERROR_VALUE) {
+        result = TranslateError(GET_ERRNO);
+        posix_ret = -1;
+        return;
+    }
+ 
+    flags &= ~O_NONBLOCK;
+    if (ctr_arg & 4) // O_NONBLOCK
+        flags |= O_NONBLOCK;
+ 
+    int ret = ::fcntl(socket_handle, F_SETFL, flags);
+    if (ret == SOCKET_ERROR_VALUE) {
+        result = TranslateError(GET_ERRNO);
+        posix_ret = -1;
+        return;
+    }
+#endif
+    } else {
+        LOG_ERROR(Service_SOC, "Unsupported command (%d) in fcntl call");
+        result = TranslateError(EINVAL); // TODO: Or something
+        posix_ret = -1;
+        return;
+    }
 }
 
 static void Listen(Service::Interface* self) {
