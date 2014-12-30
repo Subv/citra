@@ -141,13 +141,13 @@ struct CTRPollFD {
     u32 fd; ///< Socket handle
 
     union Events {
+        u32 hex; ///< The complete value formed by the flags
         BitField<0, 1, u32> pollin;
         BitField<1, 1, u32> pollpri;
         BitField<2, 1, u32> pollhup;
         BitField<3, 1, u32> pollerr;
         BitField<4, 1, u32> pollout;
         BitField<5, 1, u32> pollnval;
-        u32 hex; ///< The complete value formed by the flags
 
         /// Translates the resulting events of a Poll operation from platform-specific to 3ds specific
         static Events TranslateTo3DS(u32 input_event) {
