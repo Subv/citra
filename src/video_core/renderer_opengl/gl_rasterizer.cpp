@@ -135,7 +135,7 @@ void RasterizerOpenGL::Reset() {
 
     SetShader();
 
-    res_cache.FullFlush();
+    res_cache.InvalidateAll();
 }
 
 void RasterizerOpenGL::AddTriangle(const Pica::Shader::OutputVertex& v0,
@@ -176,20 +176,17 @@ void RasterizerOpenGL::DrawTriangles() {
     u32 cur_fb_depth_size = Pica::Regs::BytesPerDepthPixel(regs.framebuffer.depth_format)
                             * regs.framebuffer.GetWidth() * regs.framebuffer.GetHeight();
 
-    res_cache.NotifyFlush(cur_fb_color_addr, cur_fb_color_size, true);
-    res_cache.NotifyFlush(cur_fb_depth_addr, cur_fb_depth_size, true);
+    res_cache.InvalidateInRange(cur_fb_color_addr, cur_fb_color_size, true);
+    res_cache.InvalidateInRange(cur_fb_depth_addr, cur_fb_depth_size, true);
 }
 
-void RasterizerOpenGL::CommitFramebuffer() {
+void RasterizerOpenGL::FlushFramebuffer() {
     CommitColorBuffer();
     CommitDepthBuffer();
 }
 
 void RasterizerOpenGL::NotifyPicaRegisterChanged(u32 id) {
     const auto& regs = Pica::g_state.regs;
-
-    if (!Settings::values.use_hw_renderer)
-        return;
 
     switch(id) {
     // Culling
@@ -284,11 +281,8 @@ void RasterizerOpenGL::NotifyPicaRegisterChanged(u32 id) {
     }
 }
 
-void RasterizerOpenGL::NotifyPreRead(PAddr addr, u32 size) {
+void RasterizerOpenGL::FlushRegion(PAddr addr, u32 size) {
     const auto& regs = Pica::g_state.regs;
-
-    if (!Settings::values.use_hw_renderer)
-        return;
 
     PAddr cur_fb_color_addr = regs.framebuffer.GetColorBufferPhysicalAddress();
     u32 cur_fb_color_size = Pica::Regs::BytesPerColorPixel(regs.framebuffer.color_format)
@@ -306,11 +300,8 @@ void RasterizerOpenGL::NotifyPreRead(PAddr addr, u32 size) {
         CommitDepthBuffer();
 }
 
-void RasterizerOpenGL::NotifyFlush(PAddr addr, u32 size) {
+void RasterizerOpenGL::InvalidateRegion(PAddr addr, u32 size) {
     const auto& regs = Pica::g_state.regs;
-
-    if (!Settings::values.use_hw_renderer)
-        return;
 
     PAddr cur_fb_color_addr = regs.framebuffer.GetColorBufferPhysicalAddress();
     u32 cur_fb_color_size = Pica::Regs::BytesPerColorPixel(regs.framebuffer.color_format)
@@ -328,7 +319,7 @@ void RasterizerOpenGL::NotifyFlush(PAddr addr, u32 size) {
         ReloadDepthBuffer();
 
     // Notify cache of flush in case the region touches a cached resource
-    res_cache.NotifyFlush(addr, size);
+    res_cache.InvalidateInRange(addr, size);
 }
 
 void RasterizerOpenGL::SamplerInfo::Create() {
@@ -596,12 +587,12 @@ void RasterizerOpenGL::SyncCullMode() {
 
     case Pica::Regs::CullMode::KeepClockWise:
         state.cull.enabled = true;
-        state.cull.mode = GL_BACK;
+        state.cull.front_face = GL_CW;
         break;
 
     case Pica::Regs::CullMode::KeepCounterClockWise:
         state.cull.enabled = true;
-        state.cull.mode = GL_FRONT;
+        state.cull.front_face = GL_CCW;
         break;
 
     default:
@@ -692,9 +683,8 @@ void RasterizerOpenGL::SyncDrawState() {
     // OpenGL uses different y coordinates, so negate corner offset and flip origin
     // TODO: Ensure viewport_corner.x should not be negated or origin flipped
     // TODO: Use floating-point viewports for accuracy if supported
-    glViewport((GLsizei)static_cast<float>(regs.viewport_corner.x),
-                -(GLsizei)static_cast<float>(regs.viewport_corner.y)
-                    + regs.framebuffer.GetHeight() - viewport_height,
+    glViewport((GLsizei)regs.viewport_corner.x,
+               (GLsizei)regs.viewport_corner.y,
                 viewport_width, viewport_height);
 
     // Sync bound texture(s), upload if not cached
@@ -733,7 +723,7 @@ void RasterizerOpenGL::ReloadColorBuffer() {
         for (int x = 0; x < fb_color_texture.width; ++x) {
             const u32 coarse_y = y & ~7;
             u32 dst_offset = VideoCore::GetMortonOffset(x, y, bytes_per_pixel) + coarse_y * fb_color_texture.width * bytes_per_pixel;
-            u32 gl_pixel_index = (x + y * fb_color_texture.width) * bytes_per_pixel;
+            u32 gl_pixel_index = (x + (fb_color_texture.height - 1 - y) * fb_color_texture.width) * bytes_per_pixel;
 
             u8* pixel = color_buffer + dst_offset;
             memcpy(&temp_fb_color_buffer[gl_pixel_index], pixel, bytes_per_pixel);
@@ -779,7 +769,7 @@ void RasterizerOpenGL::ReloadDepthBuffer() {
             for (int x = 0; x < fb_depth_texture.width; ++x) {
                 const u32 coarse_y = y & ~7;
                 u32 dst_offset = VideoCore::GetMortonOffset(x, y, bytes_per_pixel) + coarse_y * fb_depth_texture.width * bytes_per_pixel;
-                u32 gl_pixel_index = (x + y * fb_depth_texture.width);
+                u32 gl_pixel_index = (x + (fb_depth_texture.height - 1 - y) * fb_depth_texture.width);
 
                 u8* pixel = depth_buffer + dst_offset;
                 u32 depth_stencil = *(u32*)pixel;
@@ -791,7 +781,7 @@ void RasterizerOpenGL::ReloadDepthBuffer() {
             for (int x = 0; x < fb_depth_texture.width; ++x) {
                 const u32 coarse_y = y & ~7;
                 u32 dst_offset = VideoCore::GetMortonOffset(x, y, bytes_per_pixel) + coarse_y * fb_depth_texture.width * bytes_per_pixel;
-                u32 gl_pixel_index = (x + y * fb_depth_texture.width) * gl_bpp;
+                u32 gl_pixel_index = (x + (fb_depth_texture.height - 1 - y) * fb_depth_texture.width) * gl_bpp;
 
                 u8* pixel = depth_buffer + dst_offset;
                 memcpy(&temp_fb_depth_data[gl_pixel_index], pixel, bytes_per_pixel);
@@ -846,7 +836,7 @@ void RasterizerOpenGL::CommitColorBuffer() {
                 for (int x = 0; x < fb_color_texture.width; ++x) {
                     const u32 coarse_y = y & ~7;
                     u32 dst_offset = VideoCore::GetMortonOffset(x, y, bytes_per_pixel) + coarse_y * fb_color_texture.width * bytes_per_pixel;
-                    u32 gl_pixel_index = x * bytes_per_pixel + y * fb_color_texture.width * bytes_per_pixel;
+                    u32 gl_pixel_index = x * bytes_per_pixel + (fb_color_texture.height - 1 - y) * fb_color_texture.width * bytes_per_pixel;
 
                     u8* pixel = color_buffer + dst_offset;
                     memcpy(pixel, &temp_gl_color_buffer[gl_pixel_index], bytes_per_pixel);
@@ -888,7 +878,7 @@ void RasterizerOpenGL::CommitDepthBuffer() {
                     for (int x = 0; x < fb_depth_texture.width; ++x) {
                         const u32 coarse_y = y & ~7;
                         u32 dst_offset = VideoCore::GetMortonOffset(x, y, bytes_per_pixel) + coarse_y * fb_depth_texture.width * bytes_per_pixel;
-                        u32 gl_pixel_index = (x + y * fb_depth_texture.width);
+                        u32 gl_pixel_index = (x + (fb_depth_texture.height - 1 - y) * fb_depth_texture.width);
 
                         u8* pixel = depth_buffer + dst_offset;
                         u32 depth_stencil = ((u32*)temp_gl_depth_data)[gl_pixel_index];
@@ -900,7 +890,7 @@ void RasterizerOpenGL::CommitDepthBuffer() {
                     for (int x = 0; x < fb_depth_texture.width; ++x) {
                         const u32 coarse_y = y & ~7;
                         u32 dst_offset = VideoCore::GetMortonOffset(x, y, bytes_per_pixel) + coarse_y * fb_depth_texture.width * bytes_per_pixel;
-                        u32 gl_pixel_index = (x + y * fb_depth_texture.width) * gl_bpp;
+                        u32 gl_pixel_index = (x + (fb_depth_texture.height - 1 - y) * fb_depth_texture.width) * gl_bpp;
 
                         u8* pixel = depth_buffer + dst_offset;
                         memcpy(pixel, &temp_gl_depth_data[gl_pixel_index], bytes_per_pixel);
