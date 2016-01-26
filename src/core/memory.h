@@ -5,6 +5,7 @@
 #pragma once
 
 #include <cstddef>
+#include <string>
 
 #include "common/common_types.h"
 
@@ -131,14 +132,23 @@ void WriteBlock(VAddr addr, const u8* data, size_t size);
 u8* GetPointer(VAddr virtual_address);
 
 /**
-* Converts a virtual address inside a region with 1:1 mapping to physical memory to a physical
-* address. This should be used by services to translate addresses for use by the hardware.
-*/
+ * Reads a fixed-size string of the specified size starting at
+ * the specified address and returns a copy of it.
+ * @param vaddr Starting address of the string.
+ * @param size Size of the string.
+ * @return A copy of the string that was read.
+ */
+std::string GetString(const VAddr vaddr, const u32 size);
+
+/**
+ * Converts a virtual address inside a region with 1:1 mapping to physical memory to a physical
+ * address. This should be used by services to translate addresses for use by the hardware.
+ */
 PAddr VirtualToPhysicalAddress(VAddr addr);
 
 /**
-* Undoes a mapping performed by VirtualToPhysicalAddress().
-*/
+ * Undoes a mapping performed by VirtualToPhysicalAddress().
+ */
 VAddr PhysicalToVirtualAddress(PAddr addr);
 
 /**

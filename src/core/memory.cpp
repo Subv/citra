@@ -149,6 +149,15 @@ u8* GetPointer(const VAddr vaddr) {
     return nullptr;
 }
 
+std::string GetString(const VAddr vaddr, const u32 size) {
+    std::string string;
+    string.reserve(size);
+    for (u32 offset = 0; offset < size; ++offset)
+        string.push_back(Read8(vaddr + offset));
+    return string;
+
+}
+
 u8* GetPhysicalPointer(PAddr address) {
     return GetPointer(PhysicalToVirtualAddress(address));
 }

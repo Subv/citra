@@ -24,6 +24,10 @@ ARM_DynCom::ARM_DynCom(PrivilegeMode initial_mode) {
 ARM_DynCom::~ARM_DynCom() {
 }
 
+void ARM_DynCom::ClearInstructionCache() {
+    state->instruction_cache.clear();
+}
+
 void ARM_DynCom::SetPC(u32 pc) {
     state->Reg[15] = pc;
 }
