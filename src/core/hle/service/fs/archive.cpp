@@ -89,7 +89,7 @@ File::File(std::unique_ptr<FileSys::FileBackend>&& backend, const FileSys::Path 
 
 File::~File() {}
 
-ResultVal<bool> File::SyncRequest() {
+ResultCode File::HandleSyncRequest() {
     u32* cmd_buff = Kernel::GetCommandBuffer();
     FileCommand cmd = static_cast<FileCommand>(cmd_buff[0]);
     switch (cmd) {
@@ -111,7 +111,7 @@ ResultVal<bool> File::SyncRequest() {
             ResultVal<size_t> read = backend->Read(offset, length, Memory::GetPointer(address));
             if (read.Failed()) {
                 cmd_buff[1] = read.Code().raw;
-                return read.Code();
+                break;
             }
             cmd_buff[2] = static_cast<u32>(*read);
             Memory::RasterizerFlushAndInvalidateRegion(Memory::VirtualToPhysicalAddress(address), length);
@@ -131,7 +131,7 @@ ResultVal<bool> File::SyncRequest() {
             ResultVal<size_t> written = backend->Write(offset, length, flush != 0, Memory::GetPointer(address));
             if (written.Failed()) {
                 cmd_buff[1] = written.Code().raw;
-                return written.Code();
+                break;
             }
             cmd_buff[2] = static_cast<u32>(*written);
             break;
@@ -195,10 +195,10 @@ ResultVal<bool> File::SyncRequest() {
             LOG_ERROR(Service_FS, "Unknown command=0x%08X!", cmd);
             ResultCode error = UnimplementedFunction(ErrorModule::FS);
             cmd_buff[1] = error.raw; // TODO(Link Mauve): use the correct error code for that.
-            return error;
+            return ServerSession::HandleSyncRequest();
     }
     cmd_buff[1] = RESULT_SUCCESS.raw; // No error
-    return MakeResult<bool>(false);
+    return ServerSession::HandleSyncRequest();
 }
 
 Directory::Directory(std::unique_ptr<FileSys::DirectoryBackend>&& backend, const FileSys::Path & path)
@@ -206,7 +206,7 @@ Directory::Directory(std::unique_ptr<FileSys::DirectoryBackend>&& backend, const
 
 Directory::~Directory() {}
 
-ResultVal<bool> Directory::SyncRequest() {
+ResultCode Directory::HandleSyncRequest() {
     u32* cmd_buff = Kernel::GetCommandBuffer();
     DirectoryCommand cmd = static_cast<DirectoryCommand>(cmd_buff[0]);
     switch (cmd) {
@@ -237,10 +237,10 @@ ResultVal<bool> Directory::SyncRequest() {
             LOG_ERROR(Service_FS, "Unknown command=0x%08X!", cmd);
             ResultCode error = UnimplementedFunction(ErrorModule::FS);
             cmd_buff[1] = error.raw; // TODO(Link Mauve): use the correct error code for that.
-            return MakeResult<bool>(false);
+            return ServerSession::HandleSyncRequest();
     }
     cmd_buff[1] = RESULT_SUCCESS.raw; // No error
-    return MakeResult<bool>(false);
+    return ServerSession::HandleSyncRequest();
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////

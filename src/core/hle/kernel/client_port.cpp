@@ -7,6 +7,7 @@
 #include "core/hle/kernel/client_port.h"
 #include "core/hle/kernel/kernel.h"
 #include "core/hle/kernel/server_port.h"
+#include "core/hle/kernel/server_session.h"
 
 namespace Kernel {
 
@@ -22,6 +23,12 @@ ResultVal<SharedPtr<ClientPort>> ClientPort::Create(SharedPtr<ServerPort> server
     client_port->name = std::move(name);
 
     return MakeResult<SharedPtr<ClientPort>>(std::move(client_port));
+}
+
+void ClientPort::AddWaitingSession(SharedPtr<ServerSession> server_session) {
+    server_port->pending_sessions.push_back(server_session);
+    // Wake the threads waiting on the ServerPort
+    server_port->WakeupAllWaitingThreads();
 }
 
 } // namespace

@@ -10,7 +10,7 @@
 #include "common/common_types.h"
 
 #include "core/file_sys/archive_backend.h"
-#include "core/hle/kernel/session.h"
+#include "core/hle/kernel/server_session.h"
 #include "core/hle/result.h"
 
 namespace FileSys {
@@ -46,26 +46,26 @@ enum class MediaType : u32 {
 
 typedef u64 ArchiveHandle;
 
-class File : public Kernel::Session {
+class File : public Kernel::ServerSession {
 public:
     File(std::unique_ptr<FileSys::FileBackend>&& backend, const FileSys::Path& path);
     ~File();
 
     std::string GetName() const override { return "Path: " + path.DebugStr(); }
-    ResultVal<bool> SyncRequest() override;
+    ResultCode HandleSyncRequest() override;
 
     FileSys::Path path; ///< Path of the file
     u32 priority; ///< Priority of the file. TODO(Subv): Find out what this means
     std::unique_ptr<FileSys::FileBackend> backend; ///< File backend interface
 };
 
-class Directory : public Kernel::Session {
+class Directory : public Kernel::ServerSession {
 public:
     Directory(std::unique_ptr<FileSys::DirectoryBackend>&& backend, const FileSys::Path& path);
     ~Directory();
 
     std::string GetName() const override { return "Directory: " + path.DebugStr(); }
-    ResultVal<bool> SyncRequest() override;
+    ResultCode HandleSyncRequest() override;
 
     FileSys::Path path; ///< Path of the directory
     std::unique_ptr<FileSys::DirectoryBackend> backend; ///< File backend interface

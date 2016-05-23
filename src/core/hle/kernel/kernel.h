@@ -36,7 +36,7 @@ enum KernelHandle : Handle {
 enum class HandleType : u32 {
     Unknown         = 0,
     ServerPort      = 1,
-    Session         = 2,
+    ServerSession   = 2,
     Event           = 3,
     Mutex           = 4,
     SharedMemory    = 5,
@@ -49,6 +49,7 @@ enum class HandleType : u32 {
     ResourceLimit   = 12,
     CodeSet         = 13,
     ClientPort      = 14,
+    ClientSession   = 15,
 };
 
 enum {
@@ -72,7 +73,7 @@ public:
      */
     bool IsWaitable() const {
         switch (GetHandleType()) {
-        case HandleType::Session:
+        case HandleType::ServerSession:
         case HandleType::ServerPort:
         case HandleType::Event:
         case HandleType::Mutex:
