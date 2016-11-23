@@ -16,6 +16,8 @@ set(SRCS
             debugger/ramview.cpp
             debugger/registers.cpp
             debugger/wait_tree.cpp
+            telemetry/submit_test_case_wizard.cpp
+            telemetry/telemetry_login.cpp
             util/spinbox.cpp
             util/util.cpp
             bootmanager.cpp
@@ -50,6 +52,8 @@ set(HEADERS
             debugger/ramview.h
             debugger/registers.h
             debugger/wait_tree.h
+            telemetry/submit_test_case_wizard.h
+            telemetry/telemetry_login.h
             util/spinbox.h
             util/util.h
             bootmanager.h
@@ -73,6 +77,8 @@ set(UIS
             debugger/disassembler.ui
             debugger/profiler.ui
             debugger/registers.ui
+            telemetry/submit_test_case_wizard.ui
+            telemetry/telemetry_login.ui
             configure.ui
             configure_audio.ui
             configure_debug.ui

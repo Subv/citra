@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>SubmitTestCaseWizard</class>
+ <widget class="QWizard" name="SubmitTestCaseWizard">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>400</width>
+    <height>300</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Citra Wizard</string>
+  </property>
+  <property name="options">
+   <set>QWizard::NoBackButtonOnStartPage|QWizard::NoCancelButton</set>
+  </property>
+  <widget class="SubmitTestCaseLoginPage" name="login">
+   <property name="title">
+    <string>Login</string>
+   </property>
+   <attribute name="pageId">
+    <string notr="true">1</string>
+   </attribute>
+  </widget>
+  <widget class="QWizardPage" name="wizardPage2"/>
+ </widget>
+ <customwidgets>
+  <customwidget>
+   <class>SubmitTestCaseLoginPage</class>
+   <extends>QWizardPage</extends>
+   <header>telemetry/telemetry_login.h</header>
+   <container>1</container>
+   <slots>
+    <slot>customButtonClicked(int)</slot>
+   </slots>
+  </customwidget>
+ </customwidgets>
+ <resources/>
+ <connections>
+  <connection>
+   <sender>SubmitTestCaseWizard</sender>
+   <signal>customButtonClicked(int)</signal>
+   <receiver>login</receiver>
+   <slot>customButtonClicked(int)</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>199</x>
+     <y>149</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>208</x>
+     <y>268</y>
+    </hint>
+   </hints>
+  </connection>
+ </connections>
+</ui>
