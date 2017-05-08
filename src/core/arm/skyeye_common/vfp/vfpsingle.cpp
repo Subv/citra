@@ -257,7 +257,7 @@ static u32 vfp_propagate_nan(struct vfp_single* vsd, struct vfp_single* vsn, str
     /*
      * If one was a signalling NAN, raise invalid operation.
      */
-    return tn == VFP_SNAN || tm == VFP_SNAN ? FPSCR_IOC : VFP_NAN_FLAG;
+    return tn == VFP_SNAN || tm == VFP_SNAN ? FPSCR_IOC : 0;
 }
 
 /*
