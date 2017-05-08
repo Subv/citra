@@ -90,10 +90,12 @@ u32 vfp_double_normaliseround(ARMul_State* state, int dd, struct vfp_double* vd,
 
     vfp_double_dump("pack: in", vd);
 
+    int td = vfp_double_type(vd);
+
     /*
      * Infinities and NaNs are a special case.
      */
-    if (vd->exponent == 2047 && (vd->significand == 0 || exceptions))
+    if (td & (VFP_NAN | VFP_INFINITY))
         goto pack;
 
     /*

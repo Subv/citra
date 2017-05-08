@@ -90,10 +90,12 @@ u32 vfp_single_normaliseround(ARMul_State* state, int sd, struct vfp_single* vs,
 
     vfp_single_dump("pack: in", vs);
 
+    int ts = vfp_single_type(vs);
+
     /*
      * Infinities and NaNs are a special case.
      */
-    if (vs->exponent == 255 && (vs->significand == 0 || exceptions))
+    if (ts & (VFP_NAN | VFP_INFINITY))
         goto pack;
 
     /*
