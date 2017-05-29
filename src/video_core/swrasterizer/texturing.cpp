@@ -81,6 +81,8 @@ ColorModifierFunc ConfigureColorModifier(TevStageConfig::ColorModifier factor) {
 
     UNREACHABLE_MSG("Unknown color modifier %u", factor);
     return nullptr;
+
+    #undef MAKE_LAMBDA
 };
 
 u8 GetAlphaModifier(TevStageConfig::AlphaModifier factor, const Math::Vec4<u8>& values) {
