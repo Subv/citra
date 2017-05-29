@@ -167,6 +167,36 @@ AlphaTestFunc ConfigureAlphaTest(bool enable, Pica::FramebufferRegs::CompareFunc
     #undef MAKE_LAMBDA
 }
 
+bool PassStencilTest(FramebufferRegs::CompareFunc function, u8 dest, u8 ref) {
+    switch (function) {
+    case FramebufferRegs::CompareFunc::Never:
+        return false;
+
+    case FramebufferRegs::CompareFunc::Always:
+        return true;
+
+    case FramebufferRegs::CompareFunc::Equal:
+        return ref == dest;
+
+    case FramebufferRegs::CompareFunc::NotEqual:
+        return ref != dest;
+
+    case FramebufferRegs::CompareFunc::LessThan:
+        return ref < dest;
+
+    case FramebufferRegs::CompareFunc::LessThanOrEqual:
+        return ref <= dest;
+
+    case FramebufferRegs::CompareFunc::GreaterThan:
+        return ref > dest;
+
+    case FramebufferRegs::CompareFunc::GreaterThanOrEqual:
+        return ref >= dest;
+    }
+
+    UNREACHABLE_MSG("Unknown stencil function %u", function)
+}
+
 /**
  * Helper function for ProcessTriangle with the "reversed" flag to allow for implementing
  * culling via recursion.
@@ -602,42 +632,7 @@ static void ProcessTriangleInternal(const Vertex& v0, const Vertex& v1, const Ve
                 u8 dest = old_stencil & stencil_test.input_mask;
                 u8 ref = stencil_test.reference_value & stencil_test.input_mask;
 
-                bool pass = false;
-                switch (stencil_test.func) {
-                case FramebufferRegs::CompareFunc::Never:
-                    pass = false;
-                    break;
-
-                case FramebufferRegs::CompareFunc::Always:
-                    pass = true;
-                    break;
-
-                case FramebufferRegs::CompareFunc::Equal:
-                    pass = (ref == dest);
-                    break;
-
-                case FramebufferRegs::CompareFunc::NotEqual:
-                    pass = (ref != dest);
-                    break;
-
-                case FramebufferRegs::CompareFunc::LessThan:
-                    pass = (ref < dest);
-                    break;
-
-                case FramebufferRegs::CompareFunc::LessThanOrEqual:
-                    pass = (ref <= dest);
-                    break;
-
-                case FramebufferRegs::CompareFunc::GreaterThan:
-                    pass = (ref > dest);
-                    break;
-
-                case FramebufferRegs::CompareFunc::GreaterThanOrEqual:
-                    pass = (ref >= dest);
-                    break;
-                }
-
-                if (!pass) {
+                if (!PassStencilTest(stencil_test.func, dest, ref)) {
                     UpdateStencil(stencil_test.action_stencil_fail);
                     continue;
                 }
