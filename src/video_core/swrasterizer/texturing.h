@@ -13,8 +13,8 @@ namespace Rasterizer {
 
 int GetWrappedTexCoord(TexturingRegs::TextureConfig::WrapMode mode, int val, unsigned size);
 
-Math::Vec3<u8> GetColorModifier(TexturingRegs::TevStageConfig::ColorModifier factor,
-                                const Math::Vec4<u8>& values);
+using ColorModifierFunc = Math::Vec3<u8>(*)(const Math::Vec4<u8>&);
+ColorModifierFunc ConfigureColorModifier(TexturingRegs::TevStageConfig::ColorModifier factor);
 
 u8 GetAlphaModifier(TexturingRegs::TevStageConfig::AlphaModifier factor,
                     const Math::Vec4<u8>& values);

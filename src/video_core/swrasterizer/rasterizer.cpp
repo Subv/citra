@@ -280,6 +280,12 @@ static void ProcessTriangleInternal(const Vertex& v0, const Vertex& v1, const Ve
     GetSourceFunc GetSourceAlpha3[6] = { SRC_META_ALPHA(0, 3), SRC_META_ALPHA(1, 3), SRC_META_ALPHA(2, 3), SRC_META_ALPHA(3, 3), SRC_META_ALPHA(4, 3), SRC_META_ALPHA(5, 3) };
     #undef SRC_META_ALPHA
 
+    #define COLOR_MOD(i, s) ConfigureColorModifier(tev_stages[i].color_modifier##s)
+    ColorModifierFunc GetColorModifier1[6] = { COLOR_MOD(0, 1), COLOR_MOD(1, 1), COLOR_MOD(2, 1), COLOR_MOD(3, 1), COLOR_MOD(4, 1), COLOR_MOD(5, 1) };
+    ColorModifierFunc GetColorModifier2[6] = { COLOR_MOD(0, 2), COLOR_MOD(1, 2), COLOR_MOD(2, 2), COLOR_MOD(3, 2), COLOR_MOD(4, 2), COLOR_MOD(5, 2) };
+    ColorModifierFunc GetColorModifier3[6] = { COLOR_MOD(0, 3), COLOR_MOD(1, 3), COLOR_MOD(2, 3), COLOR_MOD(3, 3), COLOR_MOD(4, 3), COLOR_MOD(5, 3) };
+    #undef COLOR_MOD
+
     const auto& output_merger = regs.framebuffer.output_merger;
     u8 alpha_test_ref = output_merger.alpha_test.ref;
     AlphaTestFunc PassAlphaTest = ConfigureAlphaTest(output_merger.alpha_test.enable, output_merger.alpha_test.func);
@@ -483,11 +489,14 @@ static void ProcessTriangleInternal(const Vertex& v0, const Vertex& v1, const Ve
                 auto& GetSource1Impl = GetSource1[tev_stage_index];
                 auto& GetSource2Impl = GetSource2[tev_stage_index];
                 auto& GetSource3Impl = GetSource3[tev_stage_index];
+                auto& GetColorModifier1Impl = GetColorModifier1[tev_stage_index];
+                auto& GetColorModifier2Impl = GetColorModifier2[tev_stage_index];
+                auto& GetColorModifier3Impl = GetColorModifier3[tev_stage_index];
                 params.const_color = { tev_stage.const_r, tev_stage.const_g, tev_stage.const_b, tev_stage.const_a };
                 Math::Vec3<u8> color_result[3] = {
-                    GetColorModifier(tev_stage.color_modifier1, GetSource1Impl(params)),
-                    GetColorModifier(tev_stage.color_modifier2, GetSource2Impl(params)),
-                    GetColorModifier(tev_stage.color_modifier3, GetSource3Impl(params)),
+                    GetColorModifier1Impl(GetSource1Impl(params)),
+                    GetColorModifier2Impl(GetSource2Impl(params)),
+                    GetColorModifier3Impl(GetSource3Impl(params)),
                 };
                 auto color_output = ColorCombine(tev_stage.color_op, color_result);
 

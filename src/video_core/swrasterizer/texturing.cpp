@@ -43,41 +43,44 @@ int GetWrappedTexCoord(TexturingRegs::TextureConfig::WrapMode mode, int val, uns
     }
 };
 
-Math::Vec3<u8> GetColorModifier(TevStageConfig::ColorModifier factor,
-                                const Math::Vec4<u8>& values) {
+ColorModifierFunc ConfigureColorModifier(TevStageConfig::ColorModifier factor) {
     using ColorModifier = TevStageConfig::ColorModifier;
+    #define MAKE_LAMBDA(value) [](const Math::Vec4<u8>& values) -> Math::Vec3<u8> { return value; }
 
     switch (factor) {
     case ColorModifier::SourceColor:
-        return values.rgb();
+        return MAKE_LAMBDA(values.rgb());
 
     case ColorModifier::OneMinusSourceColor:
-        return (Math::Vec3<u8>(255, 255, 255) - values.rgb()).Cast<u8>();
+        return MAKE_LAMBDA((Math::Vec3<u8>(255, 255, 255) - values.rgb()).Cast<u8>());
 
     case ColorModifier::SourceAlpha:
-        return values.aaa();
+        return MAKE_LAMBDA(values.aaa());
 
     case ColorModifier::OneMinusSourceAlpha:
-        return (Math::Vec3<u8>(255, 255, 255) - values.aaa()).Cast<u8>();
+        return MAKE_LAMBDA((Math::Vec3<u8>(255, 255, 255) - values.aaa()).Cast<u8>());
 
     case ColorModifier::SourceRed:
-        return values.rrr();
+        return MAKE_LAMBDA(values.rrr());
 
     case ColorModifier::OneMinusSourceRed:
-        return (Math::Vec3<u8>(255, 255, 255) - values.rrr()).Cast<u8>();
+        return MAKE_LAMBDA((Math::Vec3<u8>(255, 255, 255) - values.rrr()).Cast<u8>());
 
     case ColorModifier::SourceGreen:
-        return values.ggg();
+        return MAKE_LAMBDA(values.ggg());
 
     case ColorModifier::OneMinusSourceGreen:
-        return (Math::Vec3<u8>(255, 255, 255) - values.ggg()).Cast<u8>();
+        return MAKE_LAMBDA((Math::Vec3<u8>(255, 255, 255) - values.ggg()).Cast<u8>());
 
     case ColorModifier::SourceBlue:
-        return values.bbb();
+        return MAKE_LAMBDA(values.bbb());
 
     case ColorModifier::OneMinusSourceBlue:
-        return (Math::Vec3<u8>(255, 255, 255) - values.bbb()).Cast<u8>();
+        return MAKE_LAMBDA((Math::Vec3<u8>(255, 255, 255) - values.bbb()).Cast<u8>());
     }
+
+    UNREACHABLE_MSG("Unknown color modifier %u", factor);
+    return nullptr;
 };
 
 u8 GetAlphaModifier(TevStageConfig::AlphaModifier factor, const Math::Vec4<u8>& values) {
