@@ -433,14 +433,15 @@ static void ProcessTriangleInternal(const Vertex& v0, const Vertex& v1, const Ve
                     alpha_output = AlphaCombine(tev_stage.alpha_op, alpha_result);
                 }
 
+                auto color_multiplier = tev_stage.GetColorMultiplier();
                 combiner_output[0] =
-                    std::min((unsigned)255, color_output.r() * tev_stage.GetColorMultiplier());
+                    std::min(255u, color_output.r() * color_multiplier);
                 combiner_output[1] =
-                    std::min((unsigned)255, color_output.g() * tev_stage.GetColorMultiplier());
+                    std::min(255u, color_output.g() * color_multiplier);
                 combiner_output[2] =
-                    std::min((unsigned)255, color_output.b() * tev_stage.GetColorMultiplier());
+                    std::min(255u, color_output.b() * color_multiplier);
                 combiner_output[3] =
-                    std::min((unsigned)255, alpha_output * tev_stage.GetAlphaMultiplier());
+                    std::min(255u, alpha_output * color_multiplier);
 
                 combiner_buffer = next_combiner_buffer;
 
