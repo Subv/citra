@@ -194,7 +194,7 @@ bool PassStencilTest(FramebufferRegs::CompareFunc function, u8 dest, u8 ref) {
         return ref >= dest;
     }
 
-    UNREACHABLE_MSG("Unknown stencil function %u", function)
+    UNREACHABLE_MSG("Unknown stencil function %u", function);
 }
 
 /**
