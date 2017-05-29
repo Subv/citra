@@ -72,6 +72,60 @@ static int SignedArea(const Math::Vec2<Fix12P4>& vtx1, const Math::Vec2<Fix12P4>
 
 MICROPROFILE_DEFINE(GPU_Rasterization, "GPU", "Rasterization", MP_RGB(50, 50, 240));
 
+struct GetSourceParams {
+    Math::Vec4<u8> primary_color;
+    Math::Vec4<u8> texture_color[4];
+    Math::Vec4<u8>& combiner_buffer;
+    Math::Vec4<u8> const_color;
+    Math::Vec4<u8>& combiner_output;
+};
+
+using Source = TexturingRegs::TevStageConfig::Source;
+using GetSourceFunc = Math::Vec4<u8>(*)(const GetSourceParams&);
+GetSourceFunc GetSourceMeta(Source source) {
+    #define MAKE_LAMBDA(value) [](const GetSourceParams& params) -> Math::Vec4<u8> { return value; }
+
+    switch (source) {
+    case Source::PrimaryColor:
+
+        // HACK: Until we implement fragment lighting, use primary_color
+    case Source::PrimaryFragmentColor:
+        return MAKE_LAMBDA(params.primary_color);
+
+        // HACK: Until we implement fragment lighting, use zero
+    case Source::SecondaryFragmentColor:
+        return MAKE_LAMBDA(Math::MakeVec<u8>(0, 0, 0, 0));
+
+    case Source::Texture0:
+        return MAKE_LAMBDA(params.texture_color[0]);
+
+    case Source::Texture1:
+        return MAKE_LAMBDA(params.texture_color[1]);
+
+    case Source::Texture2:
+        return MAKE_LAMBDA(params.texture_color[2]);
+
+    case Source::Texture3:
+        return MAKE_LAMBDA(params.texture_color[3]);
+
+    case Source::PreviousBuffer:
+        return MAKE_LAMBDA(params.combiner_buffer);
+
+    case Source::Constant:
+        return MAKE_LAMBDA(params.const_color);
+
+    case Source::Previous:
+        return MAKE_LAMBDA(params.combiner_output);
+
+    default:
+        LOG_ERROR(HW_GPU, "Unknown color combiner source %d", (int)source);
+        UNIMPLEMENTED();
+        return MAKE_LAMBDA(Math::MakeVec<u8>(0, 0, 0, 0));
+    }
+
+    #undef MAKE_LAMBDA
+};
+
 /**
  * Helper function for ProcessTriangle with the "reversed" flag to allow for implementing
  * culling via recursion.
@@ -172,52 +226,6 @@ static void ProcessTriangleInternal(const Vertex& v0, const Vertex& v1, const Ve
         g_state.regs.framebuffer.output_merger.stencil_test.enable &&
         g_state.regs.framebuffer.framebuffer.depth_format == FramebufferRegs::DepthFormat::D24S8;
     const auto stencil_test = g_state.regs.framebuffer.output_merger.stencil_test;
-
-    using Source = TexturingRegs::TevStageConfig::Source;
-    using GetSourceFunc = std::function<Math::Vec4<u8>(Math::Vec4<u8>& primary_color, Math::Vec4<u8> texture_color[4], Math::Vec4<u8>& combiner_buffer, const Pica::TexturingRegs::TevStageConfig& tev_stage, Math::Vec4<u8>& combiner_output)>;
-    auto GetSourceMeta = [](Source source) -> GetSourceFunc {
-        #define MAKE_LAMBDA(value) [](Math::Vec4<u8>& primary_color, Math::Vec4<u8> texture_color[4], Math::Vec4<u8>& combiner_buffer, const Pica::TexturingRegs::TevStageConfig& tev_stage, Math::Vec4<u8>& combiner_output) -> Math::Vec4<u8> { return value; }
-
-        switch (source) {
-        case Source::PrimaryColor:
-
-            // HACK: Until we implement fragment lighting, use primary_color
-        case Source::PrimaryFragmentColor:
-            return MAKE_LAMBDA(primary_color);
-
-            // HACK: Until we implement fragment lighting, use zero
-        case Source::SecondaryFragmentColor:
-            return MAKE_LAMBDA(Math::MakeVec<u8>(0, 0, 0, 0));
-
-        case Source::Texture0:
-            return MAKE_LAMBDA(texture_color[0]);
-
-        case Source::Texture1:
-            return MAKE_LAMBDA(texture_color[1]);
-
-        case Source::Texture2:
-            return MAKE_LAMBDA(texture_color[2]);
-
-        case Source::Texture3:
-            return MAKE_LAMBDA(texture_color[3]);
-
-        case Source::PreviousBuffer:
-            return MAKE_LAMBDA(combiner_buffer);
-
-        case Source::Constant:
-            return MAKE_LAMBDA(Math::MakeVec<u8>(tev_stage.const_r, tev_stage.const_g, tev_stage.const_b, tev_stage.const_a));
-
-        case Source::Previous:
-            return MAKE_LAMBDA(combiner_output);
-
-        default:
-            LOG_ERROR(HW_GPU, "Unknown color combiner source %d", (int)source);
-            UNIMPLEMENTED();
-            return MAKE_LAMBDA(Math::MakeVec<u8>(0, 0, 0, 0));
-        }
-
-        #undef MAKE_LAMBDA
-    };
 
     #define SRC_META(i, s) GetSourceMeta(tev_stages[i].color_source##s)
     GetSourceFunc GetSource1[6] = { SRC_META(0, 1), SRC_META(1, 1), SRC_META(2, 1), SRC_META(3, 1), SRC_META(4, 1), SRC_META(5, 1) };
@@ -416,6 +424,8 @@ static void ProcessTriangleInternal(const Vertex& v0, const Vertex& v1, const Ve
                 regs.texturing.tev_combiner_buffer_color.a,
             };
 
+            GetSourceParams params{ primary_color, texture_color[0], texture_color[1], texture_color[2], texture_color[3], combiner_buffer, { 0, 0, 0, 0 }, combiner_output };
+
             for (unsigned tev_stage_index = 0; tev_stage_index < tev_stages.size();
                  ++tev_stage_index) {
                 const auto& tev_stage = tev_stages[tev_stage_index];
@@ -428,10 +438,11 @@ static void ProcessTriangleInternal(const Vertex& v0, const Vertex& v1, const Ve
                 auto& GetSource1Impl = GetSource1[tev_stage_index];
                 auto& GetSource2Impl = GetSource2[tev_stage_index];
                 auto& GetSource3Impl = GetSource3[tev_stage_index];
+                params.const_color = { tev_stage.const_r, tev_stage.const_g, tev_stage.const_b, tev_stage.const_a };
                 Math::Vec3<u8> color_result[3] = {
-                    GetColorModifier(tev_stage.color_modifier1, GetSource1Impl(primary_color, texture_color, combiner_buffer, tev_stage, combiner_output)),
-                    GetColorModifier(tev_stage.color_modifier2, GetSource2Impl(primary_color, texture_color, combiner_buffer, tev_stage, combiner_output)),
-                    GetColorModifier(tev_stage.color_modifier3, GetSource3Impl(primary_color, texture_color, combiner_buffer, tev_stage, combiner_output)),
+                    GetColorModifier(tev_stage.color_modifier1, GetSource1Impl(params)),
+                    GetColorModifier(tev_stage.color_modifier2, GetSource2Impl(params)),
+                    GetColorModifier(tev_stage.color_modifier3, GetSource3Impl(params)),
                 };
                 auto color_output = ColorCombine(tev_stage.color_op, color_result);
 
@@ -446,11 +457,11 @@ static void ProcessTriangleInternal(const Vertex& v0, const Vertex& v1, const Ve
                     auto& GetSourceAlpha3Impl = GetSourceAlpha3[tev_stage_index];
                     std::array<u8, 3> alpha_result = {{
                         GetAlphaModifier(tev_stage.alpha_modifier1,
-                                         GetSourceAlpha1Impl(primary_color, texture_color, combiner_buffer, tev_stage, combiner_output)),
+                                         GetSourceAlpha1Impl(params)),
                         GetAlphaModifier(tev_stage.alpha_modifier2,
-                                         GetSourceAlpha2Impl(primary_color, texture_color, combiner_buffer, tev_stage, combiner_output)),
+                                         GetSourceAlpha2Impl(params)),
                         GetAlphaModifier(tev_stage.alpha_modifier3,
-                                         GetSourceAlpha3Impl(primary_color, texture_color, combiner_buffer, tev_stage, combiner_output)),
+                                         GetSourceAlpha3Impl(params)),
                     }};
                     alpha_output = AlphaCombine(tev_stage.alpha_op, alpha_result);
                 }
