@@ -82,7 +82,7 @@ struct GetSourceParams {
 
 using Source = TexturingRegs::TevStageConfig::Source;
 using GetSourceFunc = Math::Vec4<u8>(*)(const GetSourceParams&);
-GetSourceFunc GetSourceMeta(Source source) {
+GetSourceFunc ConfigureSampler(Source source) {
     #define MAKE_LAMBDA(value) [](const GetSourceParams& params) -> Math::Vec4<u8> { return value; }
 
     switch (source) {
@@ -268,13 +268,13 @@ static void ProcessTriangleInternal(const Vertex& v0, const Vertex& v1, const Ve
         g_state.regs.framebuffer.framebuffer.depth_format == FramebufferRegs::DepthFormat::D24S8;
     const auto stencil_test = g_state.regs.framebuffer.output_merger.stencil_test;
 
-    #define SRC_META(i, s) GetSourceMeta(tev_stages[i].color_source##s)
+    #define SRC_META(i, s) ConfigureSampler(tev_stages[i].color_source##s)
     GetSourceFunc GetSource1[6] = { SRC_META(0, 1), SRC_META(1, 1), SRC_META(2, 1), SRC_META(3, 1), SRC_META(4, 1), SRC_META(5, 1) };
     GetSourceFunc GetSource2[6] = { SRC_META(0, 2), SRC_META(1, 2), SRC_META(2, 2), SRC_META(3, 2), SRC_META(4, 2), SRC_META(5, 2) };
     GetSourceFunc GetSource3[6] = { SRC_META(0, 3), SRC_META(1, 3), SRC_META(2, 3), SRC_META(3, 3), SRC_META(4, 3), SRC_META(5, 3) };
     #undef SRC_META
 
-    #define SRC_META_ALPHA(i, s) GetSourceMeta(tev_stages[i].alpha_source##s)
+    #define SRC_META_ALPHA(i, s) ConfigureSampler(tev_stages[i].alpha_source##s)
     GetSourceFunc GetSourceAlpha1[6] = { SRC_META_ALPHA(0, 1), SRC_META_ALPHA(1, 1), SRC_META_ALPHA(2, 1), SRC_META_ALPHA(3, 1), SRC_META_ALPHA(4, 1), SRC_META_ALPHA(5, 1) };
     GetSourceFunc GetSourceAlpha2[6] = { SRC_META_ALPHA(0, 2), SRC_META_ALPHA(1, 2), SRC_META_ALPHA(2, 2), SRC_META_ALPHA(3, 2), SRC_META_ALPHA(4, 2), SRC_META_ALPHA(5, 2) };
     GetSourceFunc GetSourceAlpha3[6] = { SRC_META_ALPHA(0, 3), SRC_META_ALPHA(1, 3), SRC_META_ALPHA(2, 3), SRC_META_ALPHA(3, 3), SRC_META_ALPHA(4, 3), SRC_META_ALPHA(5, 3) };
