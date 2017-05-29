@@ -126,6 +126,47 @@ GetSourceFunc GetSourceMeta(Source source) {
     #undef MAKE_LAMBDA
 };
 
+using AlphaTestFunc = bool(*)(u8, u8);
+AlphaTestFunc ConfigureAlphaTest(bool enable, Pica::FramebufferRegs::CompareFunc function) {
+    #define MAKE_LAMBDA(value) [](u8 a, u8 ref) -> bool { return value; }
+
+    // A disabled alpha test will always pass
+    if (!enable)
+        return MAKE_LAMBDA(true);
+
+    // TODO: Does alpha testing happen before or after stencil?
+    switch (function) {
+    case FramebufferRegs::CompareFunc::Never:
+        return MAKE_LAMBDA(false);
+
+    case FramebufferRegs::CompareFunc::Always:
+        return MAKE_LAMBDA(true);
+
+    case FramebufferRegs::CompareFunc::Equal:
+        return MAKE_LAMBDA(a == ref);
+
+    case FramebufferRegs::CompareFunc::NotEqual:
+        return MAKE_LAMBDA(a != ref);
+
+    case FramebufferRegs::CompareFunc::LessThan:
+        return MAKE_LAMBDA(a < ref);
+
+    case FramebufferRegs::CompareFunc::LessThanOrEqual:
+        return MAKE_LAMBDA(a <= ref);
+
+    case FramebufferRegs::CompareFunc::GreaterThan:
+        return MAKE_LAMBDA(a > ref);
+
+    case FramebufferRegs::CompareFunc::GreaterThanOrEqual:
+        return MAKE_LAMBDA(a >= ref);
+    }
+
+    UNREACHABLE_MSG("Unknown alpha test value %u", function);
+    return MAKE_LAMBDA(false);
+
+    #undef MAKE_LAMBDA
+}
+
 /**
  * Helper function for ProcessTriangle with the "reversed" flag to allow for implementing
  * culling via recursion.
@@ -238,6 +279,10 @@ static void ProcessTriangleInternal(const Vertex& v0, const Vertex& v1, const Ve
     GetSourceFunc GetSourceAlpha2[6] = { SRC_META_ALPHA(0, 2), SRC_META_ALPHA(1, 2), SRC_META_ALPHA(2, 2), SRC_META_ALPHA(3, 2), SRC_META_ALPHA(4, 2), SRC_META_ALPHA(5, 2) };
     GetSourceFunc GetSourceAlpha3[6] = { SRC_META_ALPHA(0, 3), SRC_META_ALPHA(1, 3), SRC_META_ALPHA(2, 3), SRC_META_ALPHA(3, 3), SRC_META_ALPHA(4, 3), SRC_META_ALPHA(5, 3) };
     #undef SRC_META_ALPHA
+
+    const auto& output_merger = regs.framebuffer.output_merger;
+    u8 alpha_test_ref = output_merger.alpha_test.ref;
+    AlphaTestFunc PassAlphaTest = ConfigureAlphaTest(output_merger.alpha_test.enable, output_merger.alpha_test.func);
 
     // Enter rasterization loop, starting at the center of the topleft bounding box corner.
     // TODO: Not sure if looping through x first might be faster
@@ -491,48 +536,8 @@ static void ProcessTriangleInternal(const Vertex& v0, const Vertex& v1, const Ve
                 }
             }
 
-            const auto& output_merger = regs.framebuffer.output_merger;
-            // TODO: Does alpha testing happen before or after stencil?
-            if (output_merger.alpha_test.enable) {
-                bool pass = false;
-
-                switch (output_merger.alpha_test.func) {
-                case FramebufferRegs::CompareFunc::Never:
-                    pass = false;
-                    break;
-
-                case FramebufferRegs::CompareFunc::Always:
-                    pass = true;
-                    break;
-
-                case FramebufferRegs::CompareFunc::Equal:
-                    pass = combiner_output.a() == output_merger.alpha_test.ref;
-                    break;
-
-                case FramebufferRegs::CompareFunc::NotEqual:
-                    pass = combiner_output.a() != output_merger.alpha_test.ref;
-                    break;
-
-                case FramebufferRegs::CompareFunc::LessThan:
-                    pass = combiner_output.a() < output_merger.alpha_test.ref;
-                    break;
-
-                case FramebufferRegs::CompareFunc::LessThanOrEqual:
-                    pass = combiner_output.a() <= output_merger.alpha_test.ref;
-                    break;
-
-                case FramebufferRegs::CompareFunc::GreaterThan:
-                    pass = combiner_output.a() > output_merger.alpha_test.ref;
-                    break;
-
-                case FramebufferRegs::CompareFunc::GreaterThanOrEqual:
-                    pass = combiner_output.a() >= output_merger.alpha_test.ref;
-                    break;
-                }
-
-                if (!pass)
-                    continue;
-            }
+            if (!PassAlphaTest(combiner_output.a(), alpha_test_ref))
+                continue;
 
             // Apply fog combiner
             // Not fully accurate. We'd have to know what data type is used to
