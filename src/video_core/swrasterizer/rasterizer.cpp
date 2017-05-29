@@ -286,6 +286,10 @@ static void ProcessTriangleInternal(const Vertex& v0, const Vertex& v1, const Ve
     ColorModifierFunc GetColorModifier3[6] = { COLOR_MOD(0, 3), COLOR_MOD(1, 3), COLOR_MOD(2, 3), COLOR_MOD(3, 3), COLOR_MOD(4, 3), COLOR_MOD(5, 3) };
     #undef COLOR_MOD
 
+    #define ALPHA_COMB(i) ConfigureAlphaCombine(tev_stages[i].alpha_op)
+    AlphaCombineFunc AlphaCombine[] = { ALPHA_COMB(0), ALPHA_COMB(1), ALPHA_COMB(2), ALPHA_COMB(3), ALPHA_COMB(4), ALPHA_COMB(5) };
+    #undef ALPHA_COMB
+
     const auto& output_merger = regs.framebuffer.output_merger;
     u8 alpha_test_ref = output_merger.alpha_test.ref;
     AlphaTestFunc PassAlphaTest = ConfigureAlphaTest(output_merger.alpha_test.enable, output_merger.alpha_test.func);
@@ -517,7 +521,7 @@ static void ProcessTriangleInternal(const Vertex& v0, const Vertex& v1, const Ve
                         GetAlphaModifier(tev_stage.alpha_modifier3,
                                          GetSourceAlpha3Impl(params)),
                     }};
-                    alpha_output = AlphaCombine(tev_stage.alpha_op, alpha_result);
+                    alpha_output = AlphaCombine[tev_stage_index](alpha_result);
                 }
 
                 auto color_multiplier = tev_stage.GetColorMultiplier();

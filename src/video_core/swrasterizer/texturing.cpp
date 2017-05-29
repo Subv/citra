@@ -191,41 +191,46 @@ Math::Vec3<u8> ColorCombine(TevStageConfig::Operation op, const Math::Vec3<u8> i
     }
 };
 
-u8 AlphaCombine(TevStageConfig::Operation op, const std::array<u8, 3>& input) {
+AlphaCombineFunc ConfigureAlphaCombine(TevStageConfig::Operation op) {
+    #define MAKE_LAMBDA(ops) [](const std::array<u8, 3>& input) -> u8 { ops }
     switch (op) {
         using Operation = TevStageConfig::Operation;
     case Operation::Replace:
-        return input[0];
+        return MAKE_LAMBDA(return input[0];);
 
     case Operation::Modulate:
-        return input[0] * input[1] / 255;
+        return MAKE_LAMBDA(return input[0] * input[1] / 255;);
 
     case Operation::Add:
-        return std::min(255, input[0] + input[1]);
+        return MAKE_LAMBDA(return std::min(255, input[0] + input[1]););
 
     case Operation::AddSigned: {
-        // TODO(bunnei): Verify that the color conversion from (float) 0.5f to (byte) 128 is correct
-        auto result = static_cast<int>(input[0]) + static_cast<int>(input[1]) - 128;
-        return static_cast<u8>(MathUtil::Clamp<int>(result, 0, 255));
+        return MAKE_LAMBDA({
+            // TODO(bunnei): Verify that the color conversion from (float) 0.5f to (byte) 128 is correct
+            auto result = static_cast<int>(input[0]) + static_cast<int>(input[1]) - 128;
+            return static_cast<u8>(MathUtil::Clamp<int>(result, 0, 255));
+        });
     }
 
     case Operation::Lerp:
-        return (input[0] * input[2] + input[1] * (255 - input[2])) / 255;
+        return MAKE_LAMBDA(return (input[0] * input[2] + input[1] * (255 - input[2])) / 255;);
 
     case Operation::Subtract:
-        return std::max(0, (int)input[0] - (int)input[1]);
+        return MAKE_LAMBDA(return std::max(0, (int)input[0] - (int)input[1]););
 
     case Operation::MultiplyThenAdd:
-        return std::min(255, (input[0] * input[1] + 255 * input[2]) / 255);
+        return MAKE_LAMBDA(return std::min(255, (input[0] * input[1] + 255 * input[2]) / 255););
 
     case Operation::AddThenMultiply:
-        return (std::min(255, (input[0] + input[1])) * input[2]) / 255;
+        return MAKE_LAMBDA(return (std::min(255, (input[0] + input[1])) * input[2]) / 255;);
 
     default:
         LOG_ERROR(HW_GPU, "Unknown alpha combiner operation %d", (int)op);
         UNIMPLEMENTED();
-        return 0;
+        return nullptr;
     }
+
+    #undef MAKE_LAMBDA
 };
 
 } // namespace Rasterizer
