@@ -114,6 +114,70 @@ static std::tuple<float24, float24, PAddr> ConvertCubeCoord(float24 u, float24 v
     return std::make_tuple(x / z * half + half, y / z * half + half, addr);
 }
 
+Math::Vec4<u8> GetNextCombinerBuffer(unsigned tev_stage_index, const Math::Vec4<u8>& combiner_output,
+    const Math::Vec4<u8>& previous_buffer) {
+    Math::Vec4<u8> next_combiner_buffer = previous_buffer;
+
+    if (g_state.regs.texturing.tev_combiner_buffer_input.TevStageUpdatesCombinerBufferColor(
+        tev_stage_index)) {
+        next_combiner_buffer.r() = combiner_output.r();
+        next_combiner_buffer.g() = combiner_output.g();
+        next_combiner_buffer.b() = combiner_output.b();
+    }
+
+    if (g_state.regs.texturing.tev_combiner_buffer_input.TevStageUpdatesCombinerBufferAlpha(
+        tev_stage_index)) {
+        next_combiner_buffer.a() = combiner_output.a();
+    }
+
+    return next_combiner_buffer;
+}
+
+template <typename T>
+Math::Vec4<u8> ExecuteTevStage(const TexturingRegs::TevStageConfig& tev_stage, const T& GetSource) {
+    // color combiner
+    // NOTE: Not sure if the alpha combiner might use the color output of the previous
+    //       stage as input. Hence, we currently don't directly write the result to
+    //       combiner_output.rgb(), but instead store it in a temporary variable until
+    //       alpha combining has been done.
+    Math::Vec3<u8> color_result[3] = {
+        GetColorModifier(tev_stage.color_modifier1, GetSource(tev_stage.color_source1)),
+        GetColorModifier(tev_stage.color_modifier2, GetSource(tev_stage.color_source2)),
+        GetColorModifier(tev_stage.color_modifier3, GetSource(tev_stage.color_source3)),
+    };
+
+    auto color_output = ColorCombine(tev_stage.color_op, color_result);
+
+    u8 alpha_output;
+    if (tev_stage.color_op == TexturingRegs::TevStageConfig::Operation::Dot3_RGBA) {
+        // result of Dot3_RGBA operation is also placed to the alpha component
+        alpha_output = color_output.x;
+    } else {
+        // alpha combiner
+        std::array<u8, 3> alpha_result = {{
+            GetAlphaModifier(tev_stage.alpha_modifier1,
+                             GetSource(tev_stage.alpha_source1)),
+            GetAlphaModifier(tev_stage.alpha_modifier2,
+                             GetSource(tev_stage.alpha_source2)),
+            GetAlphaModifier(tev_stage.alpha_modifier3,
+                             GetSource(tev_stage.alpha_source3)),
+        }};
+        alpha_output = AlphaCombine(tev_stage.alpha_op, alpha_result);
+    }
+
+    Math::Vec4<u8> combiner_output;
+    combiner_output[0] =
+        std::min(255u, color_output.r() * tev_stage.GetColorMultiplier());
+    combiner_output[1] =
+        std::min(255u, color_output.g() * tev_stage.GetColorMultiplier());
+    combiner_output[2] =
+        std::min(255u, color_output.b() * tev_stage.GetColorMultiplier());
+    combiner_output[3] =
+        std::min(255u, alpha_output * tev_stage.GetAlphaMultiplier());
+
+    return combiner_output;
+}
+
 bool PerformAlphaTest(const Math::Vec4<u8>& combiner_output) {
     const auto& output_merger = g_state.regs.framebuffer.output_merger;
 
@@ -446,6 +510,7 @@ static void ProcessTriangleInternal(const Vertex& v0, const Vertex& v1, const Ve
             for (unsigned tev_stage_index = 0; tev_stage_index < tev_stages.size();
                  ++tev_stage_index) {
                 const auto& tev_stage = tev_stages[tev_stage_index];
+
                 using Source = TexturingRegs::TevStageConfig::Source;
 
                 auto GetSource = [&](Source source) -> Math::Vec4<u8> {
@@ -489,57 +554,9 @@ static void ProcessTriangleInternal(const Vertex& v0, const Vertex& v1, const Ve
                     }
                 };
 
-                // color combiner
-                // NOTE: Not sure if the alpha combiner might use the color output of the previous
-                //       stage as input. Hence, we currently don't directly write the result to
-                //       combiner_output.rgb(), but instead store it in a temporary variable until
-                //       alpha combining has been done.
-                Math::Vec3<u8> color_result[3] = {
-                    GetColorModifier(tev_stage.color_modifier1, GetSource(tev_stage.color_source1)),
-                    GetColorModifier(tev_stage.color_modifier2, GetSource(tev_stage.color_source2)),
-                    GetColorModifier(tev_stage.color_modifier3, GetSource(tev_stage.color_source3)),
-                };
-                auto color_output = ColorCombine(tev_stage.color_op, color_result);
-
-                u8 alpha_output;
-                if (tev_stage.color_op == TexturingRegs::TevStageConfig::Operation::Dot3_RGBA) {
-                    // result of Dot3_RGBA operation is also placed to the alpha component
-                    alpha_output = color_output.x;
-                } else {
-                    // alpha combiner
-                    std::array<u8, 3> alpha_result = {{
-                        GetAlphaModifier(tev_stage.alpha_modifier1,
-                                         GetSource(tev_stage.alpha_source1)),
-                        GetAlphaModifier(tev_stage.alpha_modifier2,
-                                         GetSource(tev_stage.alpha_source2)),
-                        GetAlphaModifier(tev_stage.alpha_modifier3,
-                                         GetSource(tev_stage.alpha_source3)),
-                    }};
-                    alpha_output = AlphaCombine(tev_stage.alpha_op, alpha_result);
-                }
-
-                combiner_output[0] =
-                    std::min((unsigned)255, color_output.r() * tev_stage.GetColorMultiplier());
-                combiner_output[1] =
-                    std::min((unsigned)255, color_output.g() * tev_stage.GetColorMultiplier());
-                combiner_output[2] =
-                    std::min((unsigned)255, color_output.b() * tev_stage.GetColorMultiplier());
-                combiner_output[3] =
-                    std::min((unsigned)255, alpha_output * tev_stage.GetAlphaMultiplier());
-
+                combiner_output = ExecuteTevStage(tev_stage, GetSource);
                 combiner_buffer = next_combiner_buffer;
-
-                if (regs.texturing.tev_combiner_buffer_input.TevStageUpdatesCombinerBufferColor(
-                        tev_stage_index)) {
-                    next_combiner_buffer.r() = combiner_output.r();
-                    next_combiner_buffer.g() = combiner_output.g();
-                    next_combiner_buffer.b() = combiner_output.b();
-                }
-
-                if (regs.texturing.tev_combiner_buffer_input.TevStageUpdatesCombinerBufferAlpha(
-                        tev_stage_index)) {
-                    next_combiner_buffer.a() = combiner_output.a();
-                }
+                next_combiner_buffer = GetNextCombinerBuffer(tev_stage_index, combiner_output, next_combiner_buffer);
             }
 
             const auto& output_merger = regs.framebuffer.output_merger;
