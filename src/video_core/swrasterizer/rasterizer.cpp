@@ -214,6 +214,46 @@ bool PerformAlphaTest(const Math::Vec4<u8>& combiner_output) {
     UNREACHABLE();
 };
 
+Math::Vec4<u8> ApplyFogCombiner(const Math::Vec4<u8>& combiner_output, float depth) {
+    // Apply fog combiner
+    // Not fully accurate. We'd have to know what data type is used to
+    // store the depth etc. Using float for now until we know more
+    // about Pica datatypes
+    if (g_state.regs.texturing.fog_mode == TexturingRegs::FogMode::Fog) {
+        const Math::Vec3<u8> fog_color = {
+            static_cast<u8>(g_state.regs.texturing.fog_color.r.Value()),
+            static_cast<u8>(g_state.regs.texturing.fog_color.g.Value()),
+            static_cast<u8>(g_state.regs.texturing.fog_color.b.Value()),
+        };
+
+        // Get index into fog LUT
+        float fog_index;
+        if (g_state.regs.texturing.fog_flip) {
+            fog_index = (1.0f - depth) * 128.0f;
+        } else {
+            fog_index = depth * 128.0f;
+        }
+
+        // Generate clamped fog factor from LUT for given fog index
+        float fog_i = MathUtil::Clamp(floorf(fog_index), 0.0f, 127.0f);
+        float fog_f = fog_index - fog_i;
+        const auto& fog_lut_entry = g_state.fog.lut[static_cast<unsigned int>(fog_i)];
+        float fog_factor = (fog_lut_entry.value + fog_lut_entry.difference * fog_f) /
+                            2047.0f; // This is signed fixed point 1.11
+        fog_factor = MathUtil::Clamp(fog_factor, 0.0f, 1.0f);
+
+        // Blend the fog
+        Math::Vec4<u8> color_output;
+        for (unsigned i = 0; i < 3; i++) {
+            color_output[i] = static_cast<u8>(fog_factor * combiner_output[i] +
+                (1.0f - fog_factor) * fog_color[i]);
+        }
+        return color_output;
+    }
+
+    return combiner_output;
+}
+
 MICROPROFILE_DEFINE(GPU_Rasterization, "GPU", "Rasterization", MP_RGB(50, 50, 240));
 
 /**
@@ -565,39 +605,7 @@ static void ProcessTriangleInternal(const Vertex& v0, const Vertex& v1, const Ve
             if (!PerformAlphaTest(combiner_output))
                 continue;
 
-            // Apply fog combiner
-            // Not fully accurate. We'd have to know what data type is used to
-            // store the depth etc. Using float for now until we know more
-            // about Pica datatypes
-            if (regs.texturing.fog_mode == TexturingRegs::FogMode::Fog) {
-                const Math::Vec3<u8> fog_color = {
-                    static_cast<u8>(regs.texturing.fog_color.r.Value()),
-                    static_cast<u8>(regs.texturing.fog_color.g.Value()),
-                    static_cast<u8>(regs.texturing.fog_color.b.Value()),
-                };
-
-                // Get index into fog LUT
-                float fog_index;
-                if (g_state.regs.texturing.fog_flip) {
-                    fog_index = (1.0f - depth) * 128.0f;
-                } else {
-                    fog_index = depth * 128.0f;
-                }
-
-                // Generate clamped fog factor from LUT for given fog index
-                float fog_i = MathUtil::Clamp(floorf(fog_index), 0.0f, 127.0f);
-                float fog_f = fog_index - fog_i;
-                const auto& fog_lut_entry = g_state.fog.lut[static_cast<unsigned int>(fog_i)];
-                float fog_factor = (fog_lut_entry.value + fog_lut_entry.difference * fog_f) /
-                                   2047.0f; // This is signed fixed point 1.11
-                fog_factor = MathUtil::Clamp(fog_factor, 0.0f, 1.0f);
-
-                // Blend the fog
-                for (unsigned i = 0; i < 3; i++) {
-                    combiner_output[i] = static_cast<u8>(fog_factor * combiner_output[i] +
-                                                         (1.0f - fog_factor) * fog_color[i]);
-                }
-            }
+            combiner_output = ApplyFogCombiner(combiner_output, depth);
 
             u8 old_stencil = 0;
 
