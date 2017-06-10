@@ -114,6 +114,42 @@ static std::tuple<float24, float24, PAddr> ConvertCubeCoord(float24 u, float24 v
     return std::make_tuple(x / z * half + half, y / z * half + half, addr);
 }
 
+bool PerformAlphaTest(const Math::Vec4<u8>& combiner_output) {
+    const auto& output_merger = g_state.regs.framebuffer.output_merger;
+
+    if (!output_merger.alpha_test.enable)
+        return true;
+
+    switch (output_merger.alpha_test.func) {
+    case FramebufferRegs::CompareFunc::Never:
+        return false;
+
+    case FramebufferRegs::CompareFunc::Always:
+        return true;
+
+    case FramebufferRegs::CompareFunc::Equal:
+        return combiner_output.a() == output_merger.alpha_test.ref;
+
+    case FramebufferRegs::CompareFunc::NotEqual:
+        return combiner_output.a() != output_merger.alpha_test.ref;
+
+    case FramebufferRegs::CompareFunc::LessThan:
+        return combiner_output.a() < output_merger.alpha_test.ref;
+
+    case FramebufferRegs::CompareFunc::LessThanOrEqual:
+        return combiner_output.a() <= output_merger.alpha_test.ref;
+
+    case FramebufferRegs::CompareFunc::GreaterThan:
+        return combiner_output.a() > output_merger.alpha_test.ref;
+
+    case FramebufferRegs::CompareFunc::GreaterThanOrEqual:
+        return combiner_output.a() >= output_merger.alpha_test.ref;
+    }
+
+    LOG_CRITICAL(HW_GPU, "Invalid alpha test compare function");
+    UNREACHABLE();
+};
+
 MICROPROFILE_DEFINE(GPU_Rasterization, "GPU", "Rasterization", MP_RGB(50, 50, 240));
 
 /**
@@ -507,47 +543,10 @@ static void ProcessTriangleInternal(const Vertex& v0, const Vertex& v1, const Ve
             }
 
             const auto& output_merger = regs.framebuffer.output_merger;
+
             // TODO: Does alpha testing happen before or after stencil?
-            if (output_merger.alpha_test.enable) {
-                bool pass = false;
-
-                switch (output_merger.alpha_test.func) {
-                case FramebufferRegs::CompareFunc::Never:
-                    pass = false;
-                    break;
-
-                case FramebufferRegs::CompareFunc::Always:
-                    pass = true;
-                    break;
-
-                case FramebufferRegs::CompareFunc::Equal:
-                    pass = combiner_output.a() == output_merger.alpha_test.ref;
-                    break;
-
-                case FramebufferRegs::CompareFunc::NotEqual:
-                    pass = combiner_output.a() != output_merger.alpha_test.ref;
-                    break;
-
-                case FramebufferRegs::CompareFunc::LessThan:
-                    pass = combiner_output.a() < output_merger.alpha_test.ref;
-                    break;
-
-                case FramebufferRegs::CompareFunc::LessThanOrEqual:
-                    pass = combiner_output.a() <= output_merger.alpha_test.ref;
-                    break;
-
-                case FramebufferRegs::CompareFunc::GreaterThan:
-                    pass = combiner_output.a() > output_merger.alpha_test.ref;
-                    break;
-
-                case FramebufferRegs::CompareFunc::GreaterThanOrEqual:
-                    pass = combiner_output.a() >= output_merger.alpha_test.ref;
-                    break;
-                }
-
-                if (!pass)
-                    continue;
-            }
+            if (!PerformAlphaTest(combiner_output))
+                continue;
 
             // Apply fog combiner
             // Not fully accurate. We'd have to know what data type is used to
