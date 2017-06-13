@@ -354,6 +354,8 @@ static void DestroyNetwork(Interface* self) {
     // Unschedule the beacon broadcast event.
     CoreTiming::UnscheduleEvent(beacon_broadcast_event, 0);
 
+    // TODO(Subv): Check if connection_status is indeed reset after this call.
+    connection_status = {};
     connection_status.status = static_cast<u8>(NetworkStatus::NotConnected);
     connection_status_event->Signal();
 
