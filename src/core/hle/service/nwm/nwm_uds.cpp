@@ -214,6 +214,11 @@ static void GetConnectionStatus(Interface* self) {
     rb.Push(RESULT_SUCCESS);
     rb.PushRaw(connection_status);
 
+    // Reset the bitmask of changed nodes after each call to this
+    // function to prevent falsely informing games of outstanding
+    // changes in subsequent calls.
+    connection_status.changed_nodes = 0;
+
     LOG_DEBUG(Service_NWM, "called");
 }
 
