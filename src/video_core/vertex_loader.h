@@ -30,11 +30,12 @@ public:
     }
 
 private:
+    using LoaderFunction = void(Math::Vec4<float24>& attr, int index, u32 elements, PAddr address);
+    std::array<LoaderFunction*, 16> vertex_attribute_loader_function;
     std::array<u32, 16> vertex_attribute_sources;
     std::array<u32, 16> vertex_attribute_strides{};
     std::array<PipelineRegs::VertexAttributeFormat, 16> vertex_attribute_formats;
     std::array<u32, 16> vertex_attribute_elements{};
-    std::array<bool, 16> vertex_attribute_is_default;
     int num_total_attributes = 0;
     bool is_setup = false;
 };

@@ -24,7 +24,7 @@ namespace Pica {
 template <unsigned M, unsigned E>
 struct Float {
 public:
-    static Float<M, E> FromFloat32(float val) {
+    static constexpr Float<M, E> FromFloat32(float val) {
         Float<M, E> ret;
         ret.value = val;
         return ret;
@@ -48,7 +48,7 @@ public:
         return res;
     }
 
-    static Float<M, E> Zero() {
+    static constexpr Float<M, E> Zero() {
         return FromFloat32(0.f);
     }
 

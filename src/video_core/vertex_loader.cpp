@@ -5,6 +5,7 @@
 #include "common/bit_field.h"
 #include "common/common_types.h"
 #include "common/logging/log.h"
+#include "common/microprofile.h"
 #include "common/vector_math.h"
 #include "core/memory.h"
 #include "video_core/debug_utils/debug_utils.h"
@@ -16,6 +17,61 @@
 
 namespace Pica {
 
+MICROPROFILE_DEFINE(GPU_VertexLoad, "GPU", "Vertex Load", MP_RGB(50, 50, 240));
+
+template <typename T>
+static void LoadBufferAttr(Math::Vec4<float24>& attr, int index, u32 elements, PAddr address) {
+    const T* srcdata = reinterpret_cast<const T*>(Memory::GetPhysicalPointer(address));
+    for (unsigned int comp = 0; comp < elements; ++comp) {
+        attr[comp] = float24::FromFloat32(srcdata[comp]);
+    }
+
+    // Default attribute values set if array elements have < 4 components. This
+    // is *not* carried over from the default attribute settings even if they're
+    // enabled for this attribute.
+    static constexpr std::array<float24, 4> defaults = {
+        float24::Zero(), float24::Zero(), float24::Zero(), float24::FromFloat32(1.0f)};
+
+    memcpy(&attr[elements], &defaults[elements], (defaults.size() - elements) * sizeof(float24));
+
+    LOG_TRACE(HW_GPU, "Loaded %d components of attribute %x for vertex %x from 0x%08x: %f %f %f %f",
+              elements, index, vertex, address, attr[0].ToFloat32(), attr[1].ToFloat32(),
+              attr[2].ToFloat32(), attr[3].ToFloat32());
+}
+
+template <>
+static void LoadBufferAttr<float>(Math::Vec4<float24>& attr, int index, u32 elements,
+                                  PAddr address) {
+    const float* srcdata = reinterpret_cast<const float*>(Memory::GetPhysicalPointer(address));
+
+    // Note: We take advantage of the fact that float24 is implemented as a simple float under the
+    // hood.
+    static_assert(sizeof(float24) == sizeof(float), "float24 differs in size from a normal float");
+    memcpy(&attr, srcdata, sizeof(float) * elements);
+
+    // Default attribute values set if array elements have < 4 components. This
+    // is *not* carried over from the default attribute settings even if they're
+    // enabled for this attribute.
+    static constexpr std::array<float24, 4> defaults = {
+        float24::Zero(), float24::Zero(), float24::Zero(), float24::FromFloat32(1.0f)};
+
+    memcpy(&attr[elements], &defaults[elements], (defaults.size() - elements) * sizeof(float24));
+}
+
+void LoadDefaultAttr(Math::Vec4<float24>& attr, int index, u32 elements, PAddr address) {
+    // Load the default attribute if we're configured to do so
+    attr = g_state.input_default_attributes.attr[index];
+
+    LOG_TRACE(HW_GPU, "Loaded default attribute %x for vertex %x: (%f, %f, %f, %f)", index, vertex,
+              attr[0].ToFloat32(), attr[1].ToFloat32(), attr[2].ToFloat32(), attr[3].ToFloat32());
+}
+
+void LoadPreviousAttr(Math::Vec4<float24>& attr, int index, u32 elements, PAddr address) {
+    // TODO(yuriks): In this case, no data gets loaded and the vertex
+    // remains with the last value it had. This isn't currently maintained
+    // as global state, however, and so won't work in Citra yet.
+}
+
 void VertexLoader::Setup(const PipelineRegs& regs) {
     ASSERT_MSG(!is_setup, "VertexLoader is not intended to be setup more than once.");
 
@@ -23,10 +79,6 @@ void VertexLoader::Setup(const PipelineRegs& regs) {
     num_total_attributes = attribute_config.GetNumTotalAttributes();
 
     boost::fill(vertex_attribute_sources, 0xdeadbeef);
-
-    for (int i = 0; i < 16; i++) {
-        vertex_attribute_is_default[i] = attribute_config.IsDefaultAttribute(i);
-    }
 
     // Setup attribute data from loaders
     for (int loader = 0; loader < 12; ++loader) {
@@ -67,93 +119,50 @@ void VertexLoader::Setup(const PipelineRegs& regs) {
         }
     }
 
+    // Set up the functions used to load the actual attributes based on their type
+    for (int i = 0; i < num_total_attributes; ++i) {
+        if (vertex_attribute_elements[i] != 0) {
+            switch (vertex_attribute_formats[i]) {
+            case PipelineRegs::VertexAttributeFormat::BYTE: {
+                vertex_attribute_loader_function[i] = LoadBufferAttr<s8>;
+                break;
+            }
+            case PipelineRegs::VertexAttributeFormat::UBYTE: {
+                vertex_attribute_loader_function[i] = LoadBufferAttr<u8>;
+                break;
+            }
+            case PipelineRegs::VertexAttributeFormat::SHORT: {
+                vertex_attribute_loader_function[i] = LoadBufferAttr<s16>;
+                break;
+            }
+            case PipelineRegs::VertexAttributeFormat::FLOAT: {
+                vertex_attribute_loader_function[i] = LoadBufferAttr<float>;
+                break;
+            }
+            }
+        } else if (attribute_config.IsDefaultAttribute(i)) {
+            vertex_attribute_loader_function[i] = LoadDefaultAttr;
+        } else {
+            vertex_attribute_loader_function[i] = LoadPreviousAttr;
+        }
+    }
+
     is_setup = true;
 }
 
 void VertexLoader::LoadVertex(u32 base_address, int index, int vertex,
                               Shader::AttributeBuffer& input,
                               DebugUtils::MemoryAccessTracker& memory_accesses) {
+    MICROPROFILE_SCOPE(GPU_VertexLoad);
+
     ASSERT_MSG(is_setup, "A VertexLoader needs to be setup before loading vertices.");
 
     for (int i = 0; i < num_total_attributes; ++i) {
-        if (vertex_attribute_elements[i] != 0) {
-            // Load per-vertex data from the loader arrays
-            u32 source_addr =
-                base_address + vertex_attribute_sources[i] + vertex_attribute_strides[i] * vertex;
-
-            if (g_debug_context && Pica::g_debug_context->recorder) {
-                memory_accesses.AddAccess(
-                    source_addr,
-                    vertex_attribute_elements[i] *
-                        ((vertex_attribute_formats[i] == PipelineRegs::VertexAttributeFormat::FLOAT)
-                             ? 4
-                             : (vertex_attribute_formats[i] ==
-                                PipelineRegs::VertexAttributeFormat::SHORT)
-                                   ? 2
-                                   : 1));
-            }
-
-            switch (vertex_attribute_formats[i]) {
-            case PipelineRegs::VertexAttributeFormat::BYTE: {
-                const s8* srcdata =
-                    reinterpret_cast<const s8*>(Memory::GetPhysicalPointer(source_addr));
-                for (unsigned int comp = 0; comp < vertex_attribute_elements[i]; ++comp) {
-                    input.attr[i][comp] = float24::FromFloat32(srcdata[comp]);
-                }
-                break;
-            }
-            case PipelineRegs::VertexAttributeFormat::UBYTE: {
-                const u8* srcdata =
-                    reinterpret_cast<const u8*>(Memory::GetPhysicalPointer(source_addr));
-                for (unsigned int comp = 0; comp < vertex_attribute_elements[i]; ++comp) {
-                    input.attr[i][comp] = float24::FromFloat32(srcdata[comp]);
-                }
-                break;
-            }
-            case PipelineRegs::VertexAttributeFormat::SHORT: {
-                const s16* srcdata =
-                    reinterpret_cast<const s16*>(Memory::GetPhysicalPointer(source_addr));
-                for (unsigned int comp = 0; comp < vertex_attribute_elements[i]; ++comp) {
-                    input.attr[i][comp] = float24::FromFloat32(srcdata[comp]);
-                }
-                break;
-            }
-            case PipelineRegs::VertexAttributeFormat::FLOAT: {
-                const float* srcdata =
-                    reinterpret_cast<const float*>(Memory::GetPhysicalPointer(source_addr));
-                for (unsigned int comp = 0; comp < vertex_attribute_elements[i]; ++comp) {
-                    input.attr[i][comp] = float24::FromFloat32(srcdata[comp]);
-                }
-                break;
-            }
-            }
-
-            // Default attribute values set if array elements have < 4 components. This
-            // is *not* carried over from the default attribute settings even if they're
-            // enabled for this attribute.
-            for (unsigned int comp = vertex_attribute_elements[i]; comp < 4; ++comp) {
-                input.attr[i][comp] =
-                    comp == 3 ? float24::FromFloat32(1.0f) : float24::FromFloat32(0.0f);
-            }
-
-            LOG_TRACE(HW_GPU, "Loaded %d components of attribute %x for vertex %x (index %x) from "
-                              "0x%08x + 0x%08x + 0x%04x: %f %f %f %f",
-                      vertex_attribute_elements[i], i, vertex, index, base_address,
-                      vertex_attribute_sources[i], vertex_attribute_strides[i] * vertex,
-                      input.attr[i][0].ToFloat32(), input.attr[i][1].ToFloat32(),
-                      input.attr[i][2].ToFloat32(), input.attr[i][3].ToFloat32());
-        } else if (vertex_attribute_is_default[i]) {
-            // Load the default attribute if we're configured to do so
-            input.attr[i] = g_state.input_default_attributes.attr[i];
-            LOG_TRACE(HW_GPU,
-                      "Loaded default attribute %x for vertex %x (index %x): (%f, %f, %f, %f)", i,
-                      vertex, index, input.attr[i][0].ToFloat32(), input.attr[i][1].ToFloat32(),
-                      input.attr[i][2].ToFloat32(), input.attr[i][3].ToFloat32());
-        } else {
-            // TODO(yuriks): In this case, no data gets loaded and the vertex
-            // remains with the last value it had. This isn't currently maintained
-            // as global state, however, and so won't work in Citra yet.
-        }
+        // Load per-vertex data from the loader arrays or the default attributes array
+        u32 source_addr =
+            base_address + vertex_attribute_sources[i] + vertex_attribute_strides[i] * vertex;
+        vertex_attribute_loader_function[i](input.attr[i], i, vertex_attribute_elements[i],
+                                            source_addr);
     }
 }
 
