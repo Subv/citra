@@ -39,25 +39,6 @@ static void LoadBufferAttr(Math::Vec4<float24>& attr, int index, u32, PAddr addr
               attr[2].ToFloat32(), attr[3].ToFloat32());
 }
 
-template <int elements>
-static void LoadFloatBufferAttr(Math::Vec4<float24>& attr, int index, u32,
-                                  PAddr address) {
-    const float* srcdata = reinterpret_cast<const float*>(Memory::GetPhysicalPointer(address));
-
-    // Note: We take advantage of the fact that float24 is implemented as a simple float under the
-    // hood.
-    static_assert(sizeof(float24) == sizeof(float), "float24 differs in size from a normal float");
-    memcpy(&attr, srcdata, sizeof(float) * elements);
-
-    // Default attribute values set if array elements have < 4 components. This
-    // is *not* carried over from the default attribute settings even if they're
-    // enabled for this attribute.
-    static constexpr std::array<float24, 4> defaults = {
-        float24::Zero(), float24::Zero(), float24::Zero(), float24::FromFloat32(1.0f)};
-
-    memcpy(&attr[elements], &defaults[elements], (defaults.size() - elements) * sizeof(float24));
-}
-
 void LoadDefaultAttr(Math::Vec4<float24>& attr, int index, u32 elements, PAddr address) {
     // Load the default attribute if we're configured to do so
     attr = g_state.input_default_attributes.attr[index];
@@ -177,16 +158,16 @@ void VertexLoader::Setup(const PipelineRegs& regs) {
             case PipelineRegs::VertexAttributeFormat::FLOAT: {
                 switch (vertex_attribute_elements[i]) {
                 case 1:
-                    vertex_attribute_loader_function[i] = LoadFloatBufferAttr<1>;
+                    vertex_attribute_loader_function[i] = LoadBufferAttr<1, float>;
                     break;
                 case 2:
-                    vertex_attribute_loader_function[i] = LoadFloatBufferAttr<2>;
+                    vertex_attribute_loader_function[i] = LoadBufferAttr<2, float>;
                     break;
                 case 3:
-                    vertex_attribute_loader_function[i] = LoadFloatBufferAttr<3>;
+                    vertex_attribute_loader_function[i] = LoadBufferAttr<3, float>;
                     break;
                 case 4:
-                    vertex_attribute_loader_function[i] = LoadFloatBufferAttr<4>;
+                    vertex_attribute_loader_function[i] = LoadBufferAttr<4, float>;
                     break;
                 }
                 break;
