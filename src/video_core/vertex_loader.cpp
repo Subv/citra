@@ -19,8 +19,8 @@ namespace Pica {
 
 MICROPROFILE_DEFINE(GPU_VertexLoad, "GPU", "Vertex Load", MP_RGB(50, 50, 240));
 
-template <typename T>
-static void LoadBufferAttr(Math::Vec4<float24>& attr, int index, u32 elements, PAddr address) {
+template <int elements, typename T>
+static void LoadBufferAttr(Math::Vec4<float24>& attr, int index, u32, PAddr address) {
     const T* srcdata = reinterpret_cast<const T*>(Memory::GetPhysicalPointer(address));
     for (unsigned int comp = 0; comp < elements; ++comp) {
         attr[comp] = float24::FromFloat32(srcdata[comp]);
@@ -39,8 +39,8 @@ static void LoadBufferAttr(Math::Vec4<float24>& attr, int index, u32 elements, P
               attr[2].ToFloat32(), attr[3].ToFloat32());
 }
 
-template <>
-static void LoadBufferAttr<float>(Math::Vec4<float24>& attr, int index, u32 elements,
+template <int elements>
+static void LoadFloatBufferAttr(Math::Vec4<float24>& attr, int index, u32,
                                   PAddr address) {
     const float* srcdata = reinterpret_cast<const float*>(Memory::GetPhysicalPointer(address));
 
@@ -124,19 +124,71 @@ void VertexLoader::Setup(const PipelineRegs& regs) {
         if (vertex_attribute_elements[i] != 0) {
             switch (vertex_attribute_formats[i]) {
             case PipelineRegs::VertexAttributeFormat::BYTE: {
-                vertex_attribute_loader_function[i] = LoadBufferAttr<s8>;
+                switch (vertex_attribute_elements[i]) {
+                case 1:
+                    vertex_attribute_loader_function[i] = LoadBufferAttr<1, s8>;
+                    break;
+                case 2:
+                    vertex_attribute_loader_function[i] = LoadBufferAttr<2, s8>;
+                    break;
+                case 3:
+                    vertex_attribute_loader_function[i] = LoadBufferAttr<3, s8>;
+                    break;
+                case 4:
+                    vertex_attribute_loader_function[i] = LoadBufferAttr<4, s8>;
+                    break;
+                }
                 break;
             }
             case PipelineRegs::VertexAttributeFormat::UBYTE: {
-                vertex_attribute_loader_function[i] = LoadBufferAttr<u8>;
+                switch (vertex_attribute_elements[i]) {
+                case 1:
+                    vertex_attribute_loader_function[i] = LoadBufferAttr<1, u8>;
+                    break;
+                case 2:
+                    vertex_attribute_loader_function[i] = LoadBufferAttr<2, u8>;
+                    break;
+                case 3:
+                    vertex_attribute_loader_function[i] = LoadBufferAttr<3, u8>;
+                    break;
+                case 4:
+                    vertex_attribute_loader_function[i] = LoadBufferAttr<4, u8>;
+                    break;
+                }
                 break;
             }
             case PipelineRegs::VertexAttributeFormat::SHORT: {
-                vertex_attribute_loader_function[i] = LoadBufferAttr<s16>;
+                switch (vertex_attribute_elements[i]) {
+                case 1:
+                    vertex_attribute_loader_function[i] = LoadBufferAttr<1, s16>;
+                    break;
+                case 2:
+                    vertex_attribute_loader_function[i] = LoadBufferAttr<2, s16>;
+                    break;
+                case 3:
+                    vertex_attribute_loader_function[i] = LoadBufferAttr<3, s16>;
+                    break;
+                case 4:
+                    vertex_attribute_loader_function[i] = LoadBufferAttr<4, s16>;
+                    break;
+                }
                 break;
             }
             case PipelineRegs::VertexAttributeFormat::FLOAT: {
-                vertex_attribute_loader_function[i] = LoadBufferAttr<float>;
+                switch (vertex_attribute_elements[i]) {
+                case 1:
+                    vertex_attribute_loader_function[i] = LoadFloatBufferAttr<1>;
+                    break;
+                case 2:
+                    vertex_attribute_loader_function[i] = LoadFloatBufferAttr<2>;
+                    break;
+                case 3:
+                    vertex_attribute_loader_function[i] = LoadFloatBufferAttr<3>;
+                    break;
+                case 4:
+                    vertex_attribute_loader_function[i] = LoadFloatBufferAttr<4>;
+                    break;
+                }
                 break;
             }
             }
