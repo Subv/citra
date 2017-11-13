@@ -119,6 +119,11 @@ ResultCode HLERequestContext::PopulateFromIncomingCommandBuffer(const u32_le* sr
             cmd_buf[i++] = src_process.process_id;
             break;
         }
+        case IPC::DescriptorType::MappedBuffer: {
+            u32 addr = src_cmdbuf[i];
+            cmd_buf[i++] = addr;
+            break;
+        }
         default:
             UNIMPLEMENTED_MSG("Unsupported handle translation: 0x%08X", descriptor);
         }
@@ -157,6 +162,11 @@ ResultCode HLERequestContext::WriteToOutgoingCommandBuffer(u32_le* dst_cmdbuf, P
                 }
                 dst_cmdbuf[i++] = handle;
             }
+            break;
+        }
+        case IPC::DescriptorType::MappedBuffer: {
+            u32 addr = cmd_buf[i];
+            dst_cmdbuf[i++] = addr;
             break;
         }
         default:

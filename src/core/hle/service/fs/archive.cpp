@@ -27,8 +27,10 @@
 #include "core/file_sys/errors.h"
 #include "core/file_sys/file_backend.h"
 #include "core/hle/ipc.h"
+#include "core/hle/ipc_helpers.h"
 #include "core/hle/kernel/client_port.h"
 #include "core/hle/kernel/client_session.h"
+#include "core/hle/kernel/event.h"
 #include "core/hle/kernel/handle_table.h"
 #include "core/hle/kernel/server_session.h"
 #include "core/hle/result.h"
@@ -84,11 +86,27 @@ enum class DirectoryCommand : u32 {
 };
 
 File::File(std::unique_ptr<FileSys::FileBackend>&& backend, const FileSys::Path& path)
-    : path(path), priority(0), backend(std::move(backend)) {}
+    : path(path), priority(0), backend(std::move(backend)), ServiceFramework("") {
+    static const FunctionInfo functions[] = {
+        {0x080200C2, &File::Read, "Read"},
+        {0x08030102, &File::Write, "Write"},
+        {0x08040000, &File::GetSize, "GetSize"},
+        {0x08050080, nullptr, "SetSize"},
+        {0x08060000, nullptr, "GetAttributes"},
+        {0x08070040, nullptr, "SetAttributes"},
+        {0x08080000, &File::Close, "Close"},
+        {0x08090000, nullptr, "Flush"},
+        {0x080A0040, nullptr, "SetPriority"},
+        {0x080B0000, nullptr, "GetPriority"},
+        {0x080C0000, &File::OpenLinkFile, "OpenLinkFile"},
+    };
+
+    RegisterHandlers(functions);
+}
 
 File::~File() {}
 
-void File::HandleSyncRequest(Kernel::SharedPtr<Kernel::ServerSession> server_session) {
+/*void File::HandleSyncRequest(Kernel::SharedPtr<Kernel::ServerSession> server_session) {
     using Kernel::ClientSession;
     using Kernel::ServerSession;
     using Kernel::SharedPtr;
@@ -106,8 +124,9 @@ void File::HandleSyncRequest(Kernel::SharedPtr<Kernel::ServerSession> server_ses
                   offset, length, address);
 
         if (offset + length > backend->GetSize()) {
-            LOG_ERROR(Service_FS, "Reading from out of bounds offset=0x%" PRIx64
-                                  " length=0x%08X file_size=0x%" PRIx64,
+            LOG_ERROR(Service_FS,
+                      "Reading from out of bounds offset=0x%" PRIx64
+                      " length=0x%08X file_size=0x%" PRIx64,
                       offset, length, backend->GetSize());
         }
 
@@ -198,6 +217,117 @@ void File::HandleSyncRequest(Kernel::SharedPtr<Kernel::ServerSession> server_ses
         return;
     }
     cmd_buff[1] = RESULT_SUCCESS.raw; // No error
+}*/
+
+void File::Read(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx, 0x802, 3, 2);
+    u64 offset = rp.Pop<u64>();
+    u32 length = rp.Pop<u32>();
+
+    size_t size;
+    IPC::MappedBufferPermissions perms;
+    VAddr address = rp.PopMappedBuffer(&size, &perms);
+    LOG_TRACE(Service_FS, "Read %s: offset=0x%llx length=%d address=0x%x", GetName().c_str(),
+              offset, length, address);
+
+    if (offset + length > backend->GetSize()) {
+        LOG_ERROR(Service_FS,
+                  "Reading from out of bounds offset=0x%" PRIx64
+                  " length=0x%08X file_size=0x%" PRIx64,
+                  offset, length, backend->GetSize());
+    }
+
+    constexpr u64 NanosecondsReadDelayPerByte = 100;
+    std::vector<u8> data(length);
+    ResultVal<size_t> read = backend->Read(offset, data.size(), data.data());
+    if (read.Failed()) {
+        IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
+        rb.Push(read.Code());
+        ctx.SleepClientThread(Kernel::GetCurrentThread(), "FS IO Read delay",
+                              length * NanosecondsReadDelayPerByte,
+                              [](Kernel::SharedPtr<Kernel::Thread> thread,
+                                 Kernel::HLERequestContext& context, ThreadWakeupReason reason) {});
+        return;
+    }
+    Memory::WriteBlock(address, data.data(), *read);
+
+    IPC::RequestBuilder rb = rp.MakeBuilder(2, 2);
+    rb.Push(RESULT_SUCCESS);
+    rb.Push(static_cast<u32>(*read));
+    rb.PushMappedBuffer(address, size, perms);
+    ctx.SleepClientThread(Kernel::GetCurrentThread(), "FS IO Read delay",
+                          length * NanosecondsReadDelayPerByte,
+                          [](Kernel::SharedPtr<Kernel::Thread> thread,
+                             Kernel::HLERequestContext& context, ThreadWakeupReason reason) {});
+}
+
+void File::Write(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx, 0x803, 4, 2);
+    u64 offset = rp.Pop<u64>();
+    u32 length = rp.Pop<u32>();
+    u32 flush = rp.Pop<u32>();
+
+    size_t size;
+    IPC::MappedBufferPermissions perms;
+    VAddr address = rp.PopMappedBuffer(&size, &perms);
+
+    LOG_TRACE(Service_FS, "Write %s: offset=0x%llx length=%d address=0x%x, flush=0x%x",
+              GetName().c_str(), offset, length, address, flush);
+
+    constexpr u64 NanosecondsWriteDelayPerByte = 400;
+    std::vector<u8> data(length);
+    Memory::ReadBlock(address, data.data(), data.size());
+    ResultVal<size_t> written = backend->Write(offset, data.size(), flush != 0, data.data());
+    if (written.Failed()) {
+        IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
+        rb.Push(written.Code());
+        ctx.SleepClientThread(Kernel::GetCurrentThread(), "FS IO Write delay",
+                              length * NanosecondsWriteDelayPerByte,
+                              [](Kernel::SharedPtr<Kernel::Thread> thread,
+                                 Kernel::HLERequestContext& context, ThreadWakeupReason reason) {});
+        return;
+    }
+
+    IPC::RequestBuilder rb = rp.MakeBuilder(2, 2);
+    rb.Push(RESULT_SUCCESS);
+    rb.Push(static_cast<u32>(*written));
+    rb.PushMappedBuffer(address, size, perms);
+
+    ctx.SleepClientThread(Kernel::GetCurrentThread(), "FS IO Write delay",
+                          length * NanosecondsWriteDelayPerByte,
+                          [](Kernel::SharedPtr<Kernel::Thread> thread,
+                             Kernel::HLERequestContext& context, ThreadWakeupReason reason) {});
+}
+
+void File::GetSize(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx, 0x804, 0, 0);
+    LOG_TRACE(Service_FS, "GetSize %s", GetName().c_str());
+
+    u64 size = backend->GetSize();
+    IPC::RequestBuilder rb = rp.MakeBuilder(3, 0);
+    rb.Push(RESULT_SUCCESS);
+    rb.Push(size);
+}
+
+void File::Close(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx, 0x808, 0, 0);
+    LOG_TRACE(Service_FS, "Close %s", GetName().c_str());
+    backend->Close();
+
+    IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
+    rb.Push(RESULT_SUCCESS);
+}
+
+void File::OpenLinkFile(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx, 0x80C, 0, 0);
+
+    LOG_WARNING(Service_FS, "(STUBBED) File command OpenLinkFile %s", GetName().c_str());
+    auto sessions = Kernel::ServerSession::CreateSessionPair(GetName());
+    ClientConnected(std::get<Kernel::SharedPtr<Kernel::ServerSession>>(sessions));
+
+    IPC::RequestBuilder rb = rp.MakeBuilder(1, 2);
+    rb.Push(RESULT_SUCCESS);
+    rb.PushObjects(std::get<Kernel::SharedPtr<Kernel::ClientSession>>(sessions));
 }
 
 Directory::Directory(std::unique_ptr<FileSys::DirectoryBackend>&& backend,

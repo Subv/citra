@@ -10,11 +10,12 @@
 #include "core/file_sys/archive_backend.h"
 #include "core/hle/kernel/hle_ipc.h"
 #include "core/hle/result.h"
+#include "core/hle/service/service.h"
 
 namespace FileSys {
 class DirectoryBackend;
 class FileBackend;
-}
+} // namespace FileSys
 
 /// The unique system identifier hash, also known as ID0
 static constexpr char SYSTEM_ID[]{"00000000000000000000000000000000"};
@@ -47,7 +48,7 @@ enum class MediaType : u32 { NAND = 0, SDMC = 1, GameCard = 2 };
 
 typedef u64 ArchiveHandle;
 
-class File final : public Kernel::SessionRequestHandler {
+class File final : public ServiceFramework<File> {
 public:
     File(std::unique_ptr<FileSys::FileBackend>&& backend, const FileSys::Path& path);
     ~File();
@@ -60,8 +61,13 @@ public:
     u32 priority;       ///< Priority of the file. TODO(Subv): Find out what this means
     std::unique_ptr<FileSys::FileBackend> backend; ///< File backend interface
 
+    void Read(Kernel::HLERequestContext& ctx);
+    void Write(Kernel::HLERequestContext& ctx);
+    void GetSize(Kernel::HLERequestContext& ctx);
+    void Close(Kernel::HLERequestContext& ctx);
+    void OpenLinkFile(Kernel::HLERequestContext& ctx);
 protected:
-    void HandleSyncRequest(Kernel::SharedPtr<Kernel::ServerSession> server_session) override;
+    //void HandleSyncRequest(Kernel::SharedPtr<Kernel::ServerSession> server_session) override;
 };
 
 class Directory final : public Kernel::SessionRequestHandler {
