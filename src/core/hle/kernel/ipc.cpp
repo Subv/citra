@@ -1,7 +1,7 @@
 // Copyright 2017 Citra Emulator Project
 // Licensed under GPLv2 or any later version
 // Refer to the license.txt file included.
-
+#pragma optimize("", off)
 #include "core/hle/ipc.h"
 #include "core/hle/kernel/handle_table.h"
 #include "core/hle/kernel/ipc.h"

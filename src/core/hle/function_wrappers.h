@@ -50,6 +50,19 @@ void Wrap() {
     FuncReturn(retval);
 }
 
+template <ResultCode func(u32*, Kernel::Handle, u32, u32, u32, u32, u32)>
+void Wrap() {
+    u32 param_1 = 0;
+    u32 retval = func(&param_1, PARAM(0), PARAM(1), PARAM(2), PARAM(3), PARAM(4), PARAM(5)).raw;
+    Core::CPU().SetReg(1, param_1);
+    FuncReturn(retval);
+}
+
+template <ResultCode func(Kernel::Handle, u32, u32)>
+void Wrap() {
+    FuncReturn(func(PARAM(0), PARAM(1), PARAM(2)).raw);
+}
+
 template <ResultCode func(u32*, u32, u32, u32, u32, s32)>
 void Wrap() {
     u32 param_1 = 0;

@@ -14,7 +14,7 @@ public:
     QTM_S();
 
     std::string GetPortName() const override {
-        return "qtm:s";
+        return "ps:ps";
     }
 };
 

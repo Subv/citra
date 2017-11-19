@@ -1,10 +1,11 @@
 // Copyright 2014 Citra Emulator Project
 // Licensed under GPLv2 or any later version
 // Refer to the license.txt file included.
-
+#pragma optimize("", off)
 #include <algorithm>
 #include <cinttypes>
 #include <map>
+#include "common/alignment.h"
 #include "common/logging/log.h"
 #include "common/microprofile.h"
 #include "common/scope_exit.h"
@@ -61,6 +62,117 @@ enum ControlMemoryOperation {
 
     MEMOP_LINEAR = 0x10000,
 };
+
+static ResultCode ControlProcessMemory(u32* out_addr, Handle process_handle, u32 addr0, u32 addr1,
+                                       u32 size, u32 operation, u32 permissions) {
+    using namespace Kernel;
+
+    LOG_DEBUG(Kernel_SVC,
+              "called process=%08X, operation=0x%08X, addr0=0x%08X, addr1=0x%08X, size=0x%X, "
+              "permissions=0x%08X",
+              process_handle, operation, addr0, addr1, size, permissions);
+
+    if ((addr0 & Memory::PAGE_MASK) != 0 || (addr1 & Memory::PAGE_MASK) != 0) {
+        return ERR_MISALIGNED_ADDRESS;
+    }
+    if ((size & Memory::PAGE_MASK) != 0) {
+        return ERR_MISALIGNED_SIZE;
+    }
+
+    SharedPtr<Process> process = Kernel::g_handle_table.Get<Process>(process_handle);
+    if (process == nullptr)
+        return ERR_INVALID_HANDLE;
+
+    VMAPermission vma_permissions = (VMAPermission)permissions;
+
+    /// Note: ControlProcessMemory only supports MAP, UNMAP and PROTECT operations, and does not
+    /// support operations on the LINEAR heap.
+    switch (operation) {
+    case MEMOP_MAP: {
+        if (addr0 != addr1) {
+            // TODO(Subv): Check if the addresses are valid.
+            auto addr1_vma = process->vm_manager.FindVMA(addr1);
+            ASSERT(addr1_vma->second.meminfo_state == MemoryState::Private);
+            ASSERT(addr1 + size <= addr1_vma->second.base + addr1_vma->second.size);
+            ASSERT((static_cast<u32>(addr1_vma->second.permissions) &
+                    static_cast<u32>(VMAPermission::ReadWrite)) ==
+                   static_cast<u32>(VMAPermission::ReadWrite));
+
+            auto addr0_vma = process->vm_manager.FindVMA(addr0);
+            ASSERT(addr0_vma->second.meminfo_state == MemoryState::Free);
+            ASSERT(addr0 + size <= addr0_vma->second.base + addr0_vma->second.size);
+
+            // Note: The real kernel will crash if this fails and the addresses are valid.
+            auto result = process->vm_manager.AliasMemory(
+                addr0, addr1, size, MemoryState::AliasCode, MemoryState::Locked);
+            ASSERT(result.Succeeded());
+            ASSERT(process->vm_manager.ReprotectRange(addr0, size, vma_permissions).IsSuccess());
+            ASSERT(
+                process->vm_manager.ReprotectRange(addr1, size, VMAPermission::None).IsSuccess());
+            Core::System::GetInstance().CPU().ClearInstructionCache();
+        } else {
+            // This code path acts like PROTECT but also changes the memory state.
+            CASCADE_CODE(process->vm_manager.ChangeMemoryState(
+                addr0, size, MemoryState::Private, VMAPermission::ReadWrite, MemoryState::AliasCode,
+                vma_permissions));
+            Core::System::GetInstance().CPU().ClearInstructionCache();
+        }
+        break;
+    }
+
+    case MEMOP_UNMAP: {
+        if (addr0 != addr1) {
+            // TODO(Subv): Check if the addresses are valid.
+            auto addr1_vma = process->vm_manager.FindVMA(addr1);
+            if (addr1_vma->second.meminfo_state != MemoryState::Locked) {
+                return ResultCode(0xE0A01BF5);
+            }
+            ASSERT(addr1 + size <= addr1_vma->second.base + addr1_vma->second.size);
+
+            auto addr0_vma = process->vm_manager.FindVMA(addr0);
+            ASSERT(addr0_vma->second.meminfo_state == MemoryState::AliasCode);
+            ASSERT(addr0 + size <= addr0_vma->second.base + addr0_vma->second.size);
+
+            ResultCode result = process->vm_manager.UnmapRange(addr0, size);
+            ASSERT(result.IsSuccess());
+
+            result = process->vm_manager.ChangeMemoryState(addr1, size, MemoryState::Locked,
+                                                           VMAPermission::None,
+                                                           MemoryState::Private, vma_permissions);
+            ASSERT(result.IsSuccess());
+            /*ASSERT(addr1 == 0x08044000 ||
+                   process->vm_manager.FindVMA(0x08044000)->second.meminfo_state ==
+                       MemoryState::Locked);*/
+            Core::System::GetInstance().CPU().ClearInstructionCache();
+            return result;
+        } else {
+            // This code path acts like PROTECT but also changes the memory state.
+            CASCADE_CODE(process->vm_manager.ChangeMemoryState(
+                addr0, size, MemoryState::AliasCode, VMAPermission::None, MemoryState::Private,
+                vma_permissions));
+            Core::System::GetInstance().CPU().ClearInstructionCache();
+        }
+        break;
+    }
+
+    case MEMOP_PROTECT: {
+        ResultCode result = process->vm_manager.ReprotectRange(addr0, size, vma_permissions);
+        if (result.IsError())
+            return result;
+        Core::System::GetInstance().CPU().ClearInstructionCache();
+        break;
+    }
+
+    default:
+        LOG_ERROR(Kernel_SVC, "unknown operation=0x%08X", operation);
+        return ResultCode(ErrorDescription::NotImplemented, ErrorModule::Kernel,
+                          ErrorSummary::NotSupported, ErrorLevel::Fatal);
+    }
+
+    process->vm_manager.LogLayout(Log::Level::Trace);
+
+    return RESULT_SUCCESS;
+}
 
 /// Map application or GSP heap memory
 static ResultCode ControlMemory(u32* out_addr, u32 operation, u32 addr0, u32 addr1, u32 size,
@@ -121,21 +233,50 @@ static ResultCode ControlMemory(u32* out_addr, u32 operation, u32 addr0, u32 add
         break;
     }
 
-    case MEMOP_MAP: // TODO: This is just a hack to avoid regressions until memory aliasing is
-                    // implemented
-        {
-            CASCADE_RESULT(*out_addr, process.HeapAllocate(addr0, size, vma_permissions));
-            break;
-        }
+    case MEMOP_MAP: {
+        // TODO(Subv): Check if the addresses are valid.
+        auto addr1_vma = process.vm_manager.FindVMA(addr1);
+        ASSERT(addr1_vma->second.meminfo_state == MemoryState::Private);
+        ASSERT(addr1 + size <= addr1_vma->second.base + addr1_vma->second.size);
+        ASSERT((static_cast<u32>(addr1_vma->second.permissions) &
+                static_cast<u32>(VMAPermission::ReadWrite)) ==
+               static_cast<u32>(VMAPermission::ReadWrite));
 
-    case MEMOP_UNMAP: // TODO: This is just a hack to avoid regressions until memory aliasing is
-                      // implemented
-        {
-            ResultCode result = process.HeapFree(addr0, size);
-            if (result.IsError())
-                return result;
-            break;
-        }
+        auto addr0_vma = process.vm_manager.FindVMA(addr0);
+        ASSERT(addr0_vma->second.meminfo_state == MemoryState::Free);
+        ASSERT(addr0 + size <= addr0_vma->second.base + addr0_vma->second.size);
+
+        // Note: The real kernel will crash if this fails and the addresses are valid.
+        auto result = process.vm_manager.AliasMemory(addr0, addr1, size, MemoryState::Alias,
+                                                     MemoryState::Aliased);
+        ASSERT(result.Succeeded());
+        ASSERT(process.vm_manager.ReprotectRange(addr0, size, vma_permissions).IsSuccess());
+        ASSERT(
+            process.vm_manager.ReprotectRange(addr1, size, VMAPermission::ReadWrite).IsSuccess());
+        Core::System::GetInstance().CPU().ClearInstructionCache();
+        break;
+    }
+
+    case MEMOP_UNMAP: {
+        // TODO(Subv): Check if the addresses are valid.
+        auto addr1_vma = process.vm_manager.FindVMA(addr1);
+        ASSERT(addr1_vma->second.meminfo_state == MemoryState::Aliased);
+        ASSERT(addr1 + size <= addr1_vma->second.base + addr1_vma->second.size);
+
+        auto addr0_vma = process.vm_manager.FindVMA(addr0);
+        ASSERT(addr0_vma->second.meminfo_state == MemoryState::Alias);
+        ASSERT(addr0 + size <= addr0_vma->second.base + addr0_vma->second.size);
+
+        ResultCode result = process.vm_manager.UnmapRange(addr0, size);
+        ASSERT(result.IsSuccess());
+
+        result = process.vm_manager.ChangeMemoryState(addr1, size, MemoryState::Aliased,
+                                                      VMAPermission::None, MemoryState::Private,
+                                                      vma_permissions);
+        ASSERT(result.IsSuccess());
+        Core::System::GetInstance().CPU().ClearInstructionCache();
+        CASCADE_CODE(result);
+    }
 
     case MEMOP_PROTECT: {
         ResultCode result = process.vm_manager.ReprotectRange(addr0, size, vma_permissions);
@@ -154,11 +295,69 @@ static ResultCode ControlMemory(u32* out_addr, u32 operation, u32 addr0, u32 add
     return RESULT_SUCCESS;
 }
 
+static ResultCode MapProcessMemory(Kernel::Handle process_handle, VAddr start_addr, u32 size) {
+    SharedPtr<Kernel::Process> process =
+        Kernel::g_handle_table.Get<Kernel::Process>(process_handle);
+    if (process == nullptr)
+        return ERR_INVALID_HANDLE;
+
+    // Map up to 0x3F00000 bytes starting from 0x100000 from the source process into the current
+    // process' address space at the specified address. Note: Non-page aligned sizes do not return
+    // an error, the lower bits are just discarded.
+    u32 code_size =
+        Common::AlignDown(std::min<u32>(size, Memory::PROCESS_IMAGE_MAX_SIZE), Memory::PAGE_SIZE);
+
+    auto vma_handle = Kernel::g_current_process->vm_manager.FindVMA(start_addr);
+    if (vma_handle->second.type != Kernel::VMAType::Free) {
+        return ResultCode(ErrorDescription::InvalidAddress, ErrorModule::OS,
+                          ErrorSummary::InvalidState, ErrorLevel::Usage);
+    }
+
+    auto result = Kernel::g_current_process->vm_manager.AliasMemory(
+        start_addr, Memory::PROCESS_IMAGE_VADDR, code_size, Kernel::MemoryState::Shared,
+        Kernel::VMAPermission::ReadWrite, process->vm_manager);
+    // TODO(Subv): Handle error cases.
+    ASSERT(result.IsSuccess());
+
+    // Now map up to 0x6000000 bytes starting from 0x8000000 from the source process into the
+    // current process' address space at the specified address + 0x7F00000.
+    static constexpr u32 MaxHeapSize = 0x6000000;
+    static constexpr u32 HeapOffset = 0x7F00000;
+    u32 heap_size =
+        Common::AlignDown(std::min<u32>(size - HeapOffset, MaxHeapSize), Memory::PAGE_SIZE);
+    if (heap_size > 0) {
+        result = Kernel::g_current_process->vm_manager.AliasMemory(
+            start_addr + HeapOffset, Memory::HEAP_VADDR, heap_size, Kernel::MemoryState::Shared,
+            Kernel::VMAPermission::ReadWrite, process->vm_manager);
+        // TODO(Subv): Handle error cases.
+        ASSERT(result.IsSuccess());
+    }
+    return RESULT_SUCCESS;
+}
+
+static ResultCode UnmapProcessMemory(Kernel::Handle process_handle, VAddr start_addr, u32 size) {
+    u32 code_size =
+        Common::AlignDown(std::min<u32>(size, Memory::PROCESS_IMAGE_MAX_SIZE), Memory::PAGE_SIZE);
+
+    ResultCode result = Kernel::g_current_process->vm_manager.UnmapRange(start_addr, code_size);
+    ASSERT(result.IsSuccess());
+
+    static constexpr u32 MaxHeapSize = 0x6000000;
+    static constexpr u32 HeapOffset = 0x7F00000;
+    u32 heap_size =
+        Common::AlignDown(std::min<u32>(size - HeapOffset, MaxHeapSize), Memory::PAGE_SIZE);
+
+    result = Kernel::g_current_process->vm_manager.UnmapRange(start_addr + HeapOffset, heap_size);
+    ASSERT(result.IsSuccess());
+
+    return RESULT_SUCCESS;
+}
+
 /// Maps a memory block to specified address
 static ResultCode MapMemoryBlock(Kernel::Handle handle, u32 addr, u32 permissions,
                                  u32 other_permissions) {
-    using Kernel::SharedMemory;
     using Kernel::MemoryPermission;
+    using Kernel::SharedMemory;
 
     LOG_TRACE(Kernel_SVC,
               "called memblock=0x%08X, addr=0x%08X, mypermissions=0x%08X, otherpermission=%d",
@@ -771,8 +970,9 @@ static ResultCode CreateThread(Kernel::Handle* out_handle, u32 priority, u32 ent
 
     Core::System::GetInstance().PrepareReschedule();
 
-    LOG_TRACE(Kernel_SVC, "called entrypoint=0x%08X (%s), arg=0x%08X, stacktop=0x%08X, "
-                          "threadpriority=0x%08X, processorid=0x%08X : created handle=0x%08X",
+    LOG_TRACE(Kernel_SVC,
+              "called entrypoint=0x%08X (%s), arg=0x%08X, stacktop=0x%08X, "
+              "threadpriority=0x%08X, processorid=0x%08X : created handle=0x%08X",
               entry_point, name.c_str(), arg, stack_top, priority, processor_id, *out_handle);
 
     return RESULT_SUCCESS;
@@ -932,7 +1132,7 @@ static ResultCode QueryProcessMemory(MemoryInfo* memory_info, PageInfo* page_inf
 
     auto vma = process->vm_manager.FindVMA(addr);
 
-    if (vma == Kernel::g_current_process->vm_manager.vma_map.end())
+    if (vma == process->vm_manager.vma_map.end())
         return Kernel::ERR_INVALID_ADDRESS;
 
     memory_info->base_address = vma->second.base;
@@ -1143,8 +1343,8 @@ static ResultCode CreatePort(Kernel::Handle* server_port, Kernel::Handle* client
     // TODO(Subv): Implement named ports.
     ASSERT_MSG(name_address == 0, "Named ports are currently unimplemented");
 
-    using Kernel::ServerPort;
     using Kernel::ClientPort;
+    using Kernel::ServerPort;
 
     auto ports = ServerPort::CreatePortPair(max_sessions);
     CASCADE_RESULT(*client_port, Kernel::g_handle_table.Create(
@@ -1407,9 +1607,9 @@ static const FunctionDef SVC_Table[] = {
     {0x6D, nullptr, "GetDebugThreadParam"},
     {0x6E, nullptr, "Unknown"},
     {0x6F, nullptr, "Unknown"},
-    {0x70, nullptr, "ControlProcessMemory"},
-    {0x71, nullptr, "MapProcessMemory"},
-    {0x72, nullptr, "UnmapProcessMemory"},
+    {0x70, HLE::Wrap<ControlProcessMemory>, "ControlProcessMemory"},
+    {0x71, HLE::Wrap<MapProcessMemory>, "MapProcessMemory"},
+    {0x72, HLE::Wrap<UnmapProcessMemory>, "UnmapProcessMemory"},
     {0x73, nullptr, "CreateCodeSet"},
     {0x74, nullptr, "RandomStub"},
     {0x75, nullptr, "CreateProcess"},

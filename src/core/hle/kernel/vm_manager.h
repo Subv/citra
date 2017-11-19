@@ -23,7 +23,8 @@ enum class VMAType : u8 {
     BackingMemory,
     /// VMA is mapped to MMIO registers at a fixed PAddr.
     MMIO,
-    // TODO(yuriks): Implement MemoryAlias to support MAP/UNMAP
+    /// VMA is an alias of another VMA.
+    MemoryAlias,
 };
 
 /// Permissions for mapped memory blocks
@@ -166,6 +167,16 @@ public:
     ResultVal<VMAHandle> MapMMIO(VAddr target, PAddr paddr, u32 size, MemoryState state,
                                  Memory::MMIORegionPointer mmio_handler);
 
+    ResultVal<VMAHandle> AliasMemory(VAddr target, VAddr source, u32 size, MemoryState alias_state,
+                                     MemoryState aliased_state);
+
+    ResultCode AliasMemory(VAddr target, VAddr source, u32 size, MemoryState alias_state,
+                           VMAPermission alias_permissions, const VMManager& source_address_space);
+
+    ResultCode ChangeMemoryState(VAddr target, u32 size, MemoryState expected_state,
+                                 VMAPermission expected_perms, MemoryState new_state,
+                                 VMAPermission new_perms);
+
     /// Unmaps a range of addresses, splitting VMAs as necessary.
     ResultCode UnmapRange(VAddr target, u32 size);
 
@@ -224,4 +235,4 @@ private:
     /// Updates the pages corresponding to this VMA so they match the VMA's attributes.
     void UpdatePageTableForVMA(const VirtualMemoryArea& vma);
 };
-}
+} // namespace Kernel

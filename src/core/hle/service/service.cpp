@@ -49,6 +49,7 @@
 #include "core/hle/service/soc_u.h"
 #include "core/hle/service/ssl_c.h"
 #include "core/hle/service/y2r_u.h"
+#include "core/loader/loader.h"
 
 using Kernel::ClientPort;
 using Kernel::ServerPort;
@@ -220,6 +221,10 @@ void Init() {
 
     AddNamedPort(new ERR::ERR_F);
 
+    Kernel::SharedPtr<Kernel::Process> process;
+    auto loader = Loader::GetLoader("PATH_TO_ro.cxi");
+    loader->Load(process);
+
     FS::ArchiveInit();
     ACT::Init();
     AM::Init();
@@ -246,7 +251,7 @@ void Init() {
     AddService(new GSP::GSP_GPU);
     AddService(new GSP::GSP_LCD);
     AddService(new HTTP::HTTP_C);
-    AddService(new LDR::LDR_RO);
+    //AddService(new LDR::LDR_RO);
     AddService(new MIC::MIC_U);
     AddService(new PM::PM_APP);
     AddService(new SOC::SOC_U);
@@ -279,4 +284,4 @@ void Shutdown() {
     g_kernel_named_ports.clear();
     LOG_DEBUG(Service, "shutdown OK");
 }
-}
+} // namespace Service

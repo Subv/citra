@@ -1,7 +1,7 @@
 // Copyright 2015 Citra Emulator Project
 // Licensed under GPLv2 or any later version
 // Refer to the license.txt file included.
-
+#pragma optimize("", off)
 #include <iterator>
 #include "common/assert.h"
 #include "core/hle/kernel/errors.h"
@@ -127,6 +127,108 @@ ResultVal<VMManager::VMAHandle> VMManager::MapMMIO(VAddr target, PAddr paddr, u3
     UpdatePageTableForVMA(final_vma);
 
     return MakeResult<VMAHandle>(MergeAdjacent(vma_handle));
+}
+
+ResultVal<VMManager::VMAHandle> VMManager::AliasMemory(VAddr target, VAddr source, u32 size,
+                                                       MemoryState alias_state,
+                                                       MemoryState aliased_state) {
+    VMAIter source_iter = StripIterConstness(FindVMA(source));
+    ASSERT(source_iter != vma_map.end());
+
+    auto& source_vma = source_iter->second;
+    ASSERT(source_vma.type == VMAType::AllocatedMemoryBlock);
+    ASSERT(source_vma.backing_block != nullptr);
+    ASSERT(source + size <= source_vma.base + source_vma.size);
+
+    CASCADE_RESULT(VMAIter vma_handle, CarveVMA(target, size));
+    VirtualMemoryArea& final_vma = vma_handle->second;
+    ASSERT(final_vma.size == size);
+
+    final_vma.type = VMAType::MemoryAlias;
+    final_vma.meminfo_state = alias_state;
+    final_vma.backing_block = source_vma.backing_block;
+    final_vma.offset = source_vma.offset + source - source_vma.base;
+    UpdatePageTableForVMA(final_vma);
+
+    // Update the source VMA state with the new value
+    CASCADE_RESULT(auto new_vma, CarveVMARange(source, size));
+    new_vma->second.meminfo_state = aliased_state;
+    UpdatePageTableForVMA(new_vma->second);
+
+    return MakeResult<VMAHandle>(MergeAdjacent(vma_handle));
+}
+
+ResultCode VMManager::AliasMemory(VAddr target, VAddr source, u32 size, MemoryState alias_state,
+                                  VMAPermission alias_permissions,
+                                  const VMManager& source_address_space) {
+
+    u32 cursor = 0;
+
+    while (true) {
+        VMAHandle source_iter = source_address_space.FindVMA(source + cursor);
+        ASSERT(source_iter != vma_map.end());
+
+        auto& source_vma = source_iter->second;
+        // Skip non-allocated blocks
+        if (source_vma.type == VMAType::Free) {
+            cursor += source_vma.size;
+            continue;
+        }
+
+        ASSERT(source_vma.type == VMAType::AllocatedMemoryBlock ||
+               source_vma.type == VMAType::MemoryAlias);
+        ASSERT(source_vma.backing_block != nullptr);
+        ASSERT(source_vma.base == source + cursor);
+
+        if (source_vma.size + cursor > size)
+            break;
+
+        CASCADE_RESULT(VMAIter vma_handle, CarveVMA(target + cursor, source_vma.size));
+        VirtualMemoryArea& final_vma = vma_handle->second;
+        ASSERT(final_vma.size == source_vma.size);
+
+        final_vma.type = VMAType::MemoryAlias;
+        final_vma.meminfo_state = alias_state;
+        final_vma.permissions = alias_permissions;
+        final_vma.backing_block = source_vma.backing_block;
+        final_vma.offset = source_vma.offset;
+        UpdatePageTableForVMA(final_vma);
+
+        MergeAdjacent(vma_handle);
+
+        cursor += source_vma.size;
+    }
+
+    return RESULT_SUCCESS;
+}
+
+ResultCode VMManager::ChangeMemoryState(VAddr target, u32 size, MemoryState expected_state,
+                                        VMAPermission expected_perms, MemoryState new_state,
+                                        VMAPermission new_perms) {
+    VAddr target_end = target + size;
+    VMAIter begin_vma = StripIterConstness(FindVMA(target));
+    VMAIter i_end = vma_map.lower_bound(target_end);
+
+    for (auto i = begin_vma; i != i_end; ++i) {
+        auto& vma = i->second;
+        if (vma.meminfo_state != expected_state) {
+            return ERR_INVALID_ADDRESS;
+        }
+        u32 perms = static_cast<u32>(expected_perms);
+        if ((static_cast<u32>(vma.permissions) & perms) != perms) {
+            return ERR_INVALID_ADDRESS_STATE;
+        }
+    }
+
+    CASCADE_RESULT(auto vma, CarveVMARange(target, size));
+
+    vma->second.permissions = new_perms;
+    vma->second.meminfo_state = new_state;
+    UpdatePageTableForVMA(vma->second);
+
+    vma = std::next(MergeAdjacent(vma));
+
+    return RESULT_SUCCESS;
 }
 
 VMManager::VMAIter VMManager::Unmap(VMAIter vma_handle) {
@@ -260,11 +362,11 @@ ResultVal<VMManager::VMAIter> VMManager::CarveVMARange(VAddr target, u32 size) {
 
     VMAIter begin_vma = StripIterConstness(FindVMA(target));
     VMAIter i_end = vma_map.lower_bound(target_end);
-    for (auto i = begin_vma; i != i_end; ++i) {
+    /*for (auto i = begin_vma; i != i_end; ++i) {
         if (i->second.type == VMAType::Free) {
             return ERR_INVALID_ADDRESS_STATE;
         }
-    }
+    }*/
 
     if (target != begin_vma->second.base) {
         begin_vma = SplitVMA(begin_vma, target - begin_vma->second.base);
@@ -295,6 +397,7 @@ VMManager::VMAIter VMManager::SplitVMA(VMAIter vma_handle, u32 offset_in_vma) {
     case VMAType::Free:
         break;
     case VMAType::AllocatedMemoryBlock:
+    case VMAType::MemoryAlias:
         new_vma.offset += offset_in_vma;
         break;
     case VMAType::BackingMemory:
@@ -335,6 +438,7 @@ void VMManager::UpdatePageTableForVMA(const VirtualMemoryArea& vma) {
         Memory::UnmapRegion(page_table, vma.base, vma.size);
         break;
     case VMAType::AllocatedMemoryBlock:
+    case VMAType::MemoryAlias:
         Memory::MapMemoryRegion(page_table, vma.base, vma.size,
                                 vma.backing_block->data() + vma.offset);
         break;
@@ -346,4 +450,4 @@ void VMManager::UpdatePageTableForVMA(const VirtualMemoryArea& vma) {
         break;
     }
 }
-}
+} // namespace Kernel

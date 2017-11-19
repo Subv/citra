@@ -3,6 +3,7 @@
 // Refer to the license.txt file included.
 
 #include <cinttypes>
+#include <cryptopp/sha.h>
 #include "common/assert.h"
 #include "common/common_types.h"
 #include "common/file_util.h"
@@ -15,7 +16,9 @@
 #include "core/hle/ipc_helpers.h"
 #include "core/hle/kernel/client_port.h"
 #include "core/hle/kernel/client_session.h"
+#include "core/hle/kernel/process.h"
 #include "core/hle/kernel/server_session.h"
+#include "core/hle/kernel/thread.h"
 #include "core/hle/result.h"
 #include "core/hle/service/fs/archive.h"
 #include "core/hle/service/fs/fs_user.h"
@@ -484,11 +487,11 @@ static void CloseArchive(Service::Interface* self) {
 }
 
 /*
-* FS_User::IsSdmcDetected service function
-*  Outputs:
-*      1 : Result of function, 0 on success, otherwise error code
-*      2 : Whether the Sdmc could be detected
-*/
+ * FS_User::IsSdmcDetected service function
+ *  Outputs:
+ *      1 : Result of function, 0 on success, otherwise error code
+ *      2 : Whether the Sdmc could be detected
+ */
 static void IsSdmcDetected(Service::Interface* self) {
     u32* cmd_buff = Kernel::GetCommandBuffer();
 
@@ -920,6 +923,47 @@ static void GetFormatInfo(Service::Interface* self) {
     cmd_buff[5] = format_info->duplicate_data;
 }
 
+static void GetProgramLaunchInfo(Service::Interface* self) {
+    u32* cmd_buff = Kernel::GetCommandBuffer();
+
+    u32 pid = cmd_buff[1];
+
+    cmd_buff[1] = RESULT_SUCCESS.raw;
+
+    Kernel::SharedPtr<Kernel::Process> process = nullptr;
+    const auto& thread_list = Kernel::GetThreadList();
+    for (const auto& thread : thread_list) {
+        if (thread->owner_process->process_id == pid) {
+            process = thread->owner_process;
+            break;
+        }
+    }
+
+    memcpy(&cmd_buff[2], &process->codeset->program_id, sizeof(u64));
+    cmd_buff[4] = 1;
+
+    LOG_WARNING(Service_FS, "called pid=0x%016" PRIx64, pid);
+}
+
+static void UpdateSha256Context(Service::Interface* self) {
+    u32* cmd_buff = Kernel::GetCommandBuffer();
+
+    u32 size = cmd_buff[9];
+    VAddr address = cmd_buff[15];
+
+    std::vector<u8> data(size);
+    Memory::ReadBlock(address, data.data(), size);
+
+    std::array<u8, CryptoPP::SHA256::DIGESTSIZE> hash;
+    CryptoPP::SHA256().CalculateDigest(hash.data(), data.data(), size);
+
+    memcpy(&cmd_buff[2], hash.data(), hash.size());
+
+    cmd_buff[1] = RESULT_SUCCESS.raw;
+
+    LOG_WARNING(Service_FS, "called");
+}
+
 const Interface::FunctionInfo FunctionTable[] = {
     {0x000100C6, nullptr, "Dummy1"},
     {0x040100C4, nullptr, "Control"},
@@ -969,7 +1013,7 @@ const Interface::FunctionInfo FunctionTable[] = {
     {0x082C0082, nullptr, "CardNorDirectCpuWriteWithoutVerify"},
     {0x082D0040, nullptr, "CardNorDirectSectorEraseWithoutVerify"},
     {0x082E0040, nullptr, "GetProductInfo"},
-    {0x082F0040, nullptr, "GetProgramLaunchInfo"},
+    {0x082F0040, GetProgramLaunchInfo, "GetProgramLaunchInfo"},
     {0x08300182, nullptr, "CreateExtSaveData"},
     {0x08310180, nullptr, "CreateSharedExtSaveData"},
     {0x08320102, nullptr, "ReadExtSaveDataIcon"},
@@ -1000,7 +1044,7 @@ const Interface::FunctionInfo FunctionTable[] = {
     {0x084B0002, nullptr, "ImportIntegrityVerificationSeed"},
     {0x084C0242, FormatSaveData, "FormatSaveData"},
     {0x084D0102, nullptr, "GetLegacySubBannerData"},
-    {0x084E0342, nullptr, "UpdateSha256Context"},
+    {0x084E0342, UpdateSha256Context, "UpdateSha256Context"},
     {0x084F0102, nullptr, "ReadSpecialFile"},
     {0x08500040, nullptr, "GetSpecialFileSize"},
     {0x08510242, CreateExtSaveData, "CreateExtSaveData"},
