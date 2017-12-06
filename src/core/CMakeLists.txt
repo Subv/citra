@@ -174,6 +174,7 @@ set(SRCS
             hw/aes/arithmetic128.cpp
             hw/aes/ccm.cpp
             hw/aes/key.cpp
+            hw/config/config11.cpp
             hw/gpu.cpp
             hw/hw.cpp
             hw/lcd.cpp
@@ -379,6 +380,7 @@ set(HEADERS
             hw/aes/arithmetic128.h
             hw/aes/ccm.h
             hw/aes/key.h
+            hw/config/config11.h
             hw/gpu.h
             hw/hw.h
             hw/lcd.h

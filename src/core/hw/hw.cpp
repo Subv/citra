@@ -5,6 +5,7 @@
 #include "common/common_types.h"
 #include "common/logging/log.h"
 #include "core/hw/aes/key.h"
+#include "core/hw/config/config11.h"
 #include "core/hw/gpu.h"
 #include "core/hw/hw.h"
 #include "core/hw/lcd.h"
@@ -89,6 +90,7 @@ void Init() {
     AES::InitKeys();
     GPU::Init();
     LCD::Init();
+    Config::Config11 = std::make_shared<Config::Config11MMIO>();
     LOG_DEBUG(HW, "initialized OK");
 }
 
@@ -96,6 +98,7 @@ void Init() {
 void Shutdown() {
     GPU::Shutdown();
     LCD::Shutdown();
+    Config::Config11 = nullptr;
     LOG_DEBUG(HW, "shutdown OK");
 }
-}
+} // namespace HW

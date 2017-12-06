@@ -16,6 +16,7 @@
 #include "core/hle/kernel/vm_manager.h"
 #include "core/hle/result.h"
 #include "core/hle/shared_page.h"
+#include "core/hw/config/config11.h"
 #include "core/memory.h"
 #include "core/memory_setup.h"
 
@@ -132,17 +133,41 @@ void HandleSpecialMapping(VMManager& address_space, const AddressMapping& mappin
         return;
     }
 
+    // TODO(yuriks): This flag seems to have some other effect, but it's unknown what
+    MemoryState memory_state = mapping.unk_flag ? MemoryState::Static : MemoryState::IO;
+
     u32 offset_into_region = mapping.address - area->vaddr_base;
     if (area->paddr_base == IO_AREA_PADDR) {
-        LOG_ERROR(Loader, "MMIO mappings are not supported yet. phys_addr=0x%08" PRIX32,
-                  area->paddr_base + offset_into_region);
+        struct MMIOMap {
+            PAddr address;
+            MMIORegionPointer region;
+        };
+
+        static std::vector<MMIOMap> io_map = {
+            {0x10140000, std::static_pointer_cast<MMIORegion>(HW::Config::Config11)},
+            {0x10141000, std::static_pointer_cast<MMIORegion>(HW::Config::Config11)},
+        };
+
+        auto io = std::find_if(io_map.begin(), io_map.end(), [&](const MMIOMap& map) {
+            return map.address == area->paddr_base + offset_into_region;
+        });
+
+        if (io == io_map.end()) {
+            LOG_ERROR(Loader, "MMIO mapping not supported. phys_addr=0x%08" PRIX32,
+                      area->paddr_base + offset_into_region);
+            return;
+        }
+
+        auto vma = address_space
+                       .MapMMIO(mapping.address, area->paddr_base + offset_into_region,
+                                mapping.size, memory_state, io->region)
+                       .Unwrap();
+        address_space.Reprotect(vma,
+                                mapping.read_only ? VMAPermission::Read : VMAPermission::ReadWrite);
         return;
     }
 
     u8* target_pointer = Memory::GetPhysicalPointer(area->paddr_base + offset_into_region);
-
-    // TODO(yuriks): This flag seems to have some other effect, but it's unknown what
-    MemoryState memory_state = mapping.unk_flag ? MemoryState::Static : MemoryState::IO;
 
     auto vma =
         address_space.MapBackingMemory(mapping.address, target_pointer, mapping.size, memory_state)
