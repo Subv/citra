@@ -135,17 +135,39 @@ static const Xmm ONE = xmm14;
 /// Constant vector of [-0.f, -0.f, -0.f, -0.f], used to efficiently negate a vector with XOR
 static const Xmm NEGBIT = xmm15;
 
+// The first 9 temp registers are stored in xmm5-xmm13 to avoid reading and writing them from memory
+// on each operations
+static const std::array<Xmm, 9> TEMP_REGS = {xmm5,  xmm6,  xmm7,  xmm8, xmm9,
+                                             xmm10, xmm11, xmm12, xmm13};
+
 // State registers that must not be modified by external functions calls
 // Scratch registers, e.g., SRC1 and SCRATCH, have to be saved on the side if needed
 static const BitSet32 persistent_regs = BuildRegSet({
     // Pointers to register blocks
-    SETUP, STATE,
+    SETUP,
+    STATE,
     // Cached registers
-    ADDROFFS_REG_0, ADDROFFS_REG_1, LOOPCOUNT_REG, COND0, COND1,
+    ADDROFFS_REG_0,
+    ADDROFFS_REG_1,
+    LOOPCOUNT_REG,
+    COND0,
+    COND1,
     // Constants
-    ONE, NEGBIT,
+    ONE,
+    NEGBIT,
     // Loop variables
-    LOOPCOUNT, LOOPINC,
+    LOOPCOUNT,
+    LOOPINC,
+    // Temporary registers
+    TEMP_REGS[0],
+    TEMP_REGS[1],
+    TEMP_REGS[2],
+    TEMP_REGS[3],
+    TEMP_REGS[4],
+    TEMP_REGS[5],
+    TEMP_REGS[6],
+    TEMP_REGS[7],
+    TEMP_REGS[8],
 });
 
 /// Raw constant for the source register selector that indicates no swizzling is performed
@@ -207,6 +229,8 @@ void JitShader::Compile_SwizzleSrc(Instruction instr, unsigned src_num, SourceRe
     }
 
     if (src_num == offset_src && address_register_index != 0) {
+        ASSERT_MSG(src_reg.GetRegisterType() == RegisterType::FloatUniform,
+                   "Trying to use relative addressing with a register that is not a float uniform");
         switch (address_register_index) {
         case 1: // address offset 1
             movaps(dest, xword[src_ptr + ADDROFFS_REG_0 + src_offset_disp]);
@@ -223,7 +247,15 @@ void JitShader::Compile_SwizzleSrc(Instruction instr, unsigned src_num, SourceRe
         }
     } else {
         // Load the source
-        movaps(dest, xword[src_ptr + src_offset_disp]);
+
+        // If we have this temporary stored in a host register, just use that instead of reloading
+        // it from memory.
+        if (src_reg.GetRegisterType() == RegisterType::Temporary &&
+            src_reg.GetIndex() < TEMP_REGS.size()) {
+            movaps(dest, TEMP_REGS[src_reg.GetIndex()]);
+        } else {
+            movaps(dest, xword[src_ptr + src_offset_disp]);
+        }
     }
 
     SwizzlePattern swiz = {(*swizzle_data)[operand_desc_id]};
@@ -261,15 +293,32 @@ void JitShader::Compile_DestEnable(Instruction instr, Xmm src) {
 
     size_t dest_offset_disp = UnitState::OutputOffset(dest);
 
+    Xbyak::Address addr = xword[STATE + dest_offset_disp];
+    const Xbyak::Operand* dest_loc = &addr;
+
+    auto WriteToRegister = [this](const Xbyak::Operand& dest, const Xbyak::Xmm& src) {
+        if (dest.isXMM())
+            movaps(static_cast<const Xbyak::Xmm&>(dest), src);
+        else {
+            const auto& addr = static_cast<const Xbyak::Address&>(dest);
+            movaps(addr, src);
+        }
+    };
+
+    // If we have this temporary stored in a host register, just update that instead of writing it
+    // to memory.
+    if (dest.GetRegisterType() == RegisterType::Temporary && dest.GetIndex() < TEMP_REGS.size()) {
+        dest_loc = &TEMP_REGS[dest.GetIndex()];
+    }
+
     // If all components are enabled, write the result to the destination register
     if (swiz.dest_mask == NO_DEST_REG_MASK) {
         // Store dest back to memory
-        movaps(xword[STATE + dest_offset_disp], src);
-
+        WriteToRegister(*dest_loc, src);
     } else {
         // Not all components are enabled, so mask the result when storing to the destination
         // register...
-        movaps(SCRATCH, xword[STATE + dest_offset_disp]);
+        movaps(SCRATCH, *dest_loc);
 
         if (Common::GetCPUCaps().sse4_1) {
             u8 mask = ((swiz.dest_mask & 1) << 3) | ((swiz.dest_mask & 8) >> 3) |
@@ -290,7 +339,7 @@ void JitShader::Compile_DestEnable(Instruction instr, Xmm src) {
         }
 
         // Store dest back to memory
-        movaps(xword[STATE + dest_offset_disp], SCRATCH);
+        WriteToRegister(*dest_loc, SCRATCH);
     }
 }
 

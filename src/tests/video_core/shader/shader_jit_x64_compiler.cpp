@@ -89,3 +89,44 @@ TEST_CASE("EX2", "[video_core][shader][shader_jit]") {
     REQUIRE(shader.Run(79.7262742773f) == Approx(1.e24f));
     REQUIRE(std::isinf(shader.Run(800.f)));
 }
+
+TEST_CASE("Temp Registers", "[video_core][shader][shader_jit]") {
+    const auto sh_input = SourceRegister::MakeInput(0);
+    const auto sh_temp = SourceRegister::MakeTemporary(0);
+    const auto sh_output = DestRegister::MakeOutput(0);
+
+    auto shader = ShaderTest({
+        // clang-format off
+        {OpCode::Id::MOV, sh_temp, sh_input},
+        {OpCode::Id::MOV, sh_temp, sh_temp},
+        {OpCode::Id::MOV, sh_temp, sh_temp},
+        {OpCode::Id::MOV, sh_temp, sh_temp},
+        {OpCode::Id::MOV, sh_temp, sh_temp},
+        {OpCode::Id::MOV, sh_temp, sh_temp},
+        {OpCode::Id::MOV, sh_temp, sh_temp},
+        {OpCode::Id::MOV, sh_temp, sh_temp},
+        {OpCode::Id::MOV, sh_temp, sh_temp},
+        {OpCode::Id::MOV, sh_temp, sh_temp},
+        {OpCode::Id::MOV, sh_temp, sh_temp},
+        {OpCode::Id::MOV, sh_temp, sh_temp},
+        {OpCode::Id::MOV, sh_temp, sh_temp},
+        {OpCode::Id::MOV, sh_temp, sh_temp},
+        {OpCode::Id::MOV, sh_temp, sh_temp},
+        {OpCode::Id::MOV, sh_temp, sh_temp},
+        {OpCode::Id::MOV, sh_temp, sh_temp},
+        {OpCode::Id::MOV, sh_temp, sh_temp},
+        {OpCode::Id::MOV, sh_temp, sh_temp},
+        {OpCode::Id::MOV, sh_temp, sh_temp},
+        {OpCode::Id::MOV, sh_temp, sh_temp},
+        {OpCode::Id::MOV, sh_temp, sh_temp},
+        {OpCode::Id::MOV, sh_temp, sh_temp},
+        {OpCode::Id::ADD, sh_temp, sh_temp, "", sh_temp},
+        {OpCode::Id::MOV, sh_output, sh_temp},
+        {OpCode::Id::END},
+        // clang-format on
+    });
+
+    REQUIRE(shader.Run(2.f) == Approx(4.f));
+    REQUIRE(shader.Run(20.f) == Approx(40.f));
+    REQUIRE(shader.Run(7.f) == Approx(14.f));
+}
