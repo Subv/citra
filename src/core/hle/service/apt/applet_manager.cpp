@@ -539,6 +539,57 @@ ResultCode AppletManager::DoApplicationJump() {
     return RESULT_SUCCESS;
 }
 
+ResultCode AppletManager::PrepareToStartApplication(u64 title_id, FS::MediaType media_type) {
+    // TODO(Subv): This should check that the current applet is of System type and return 0xc8a0cc04
+    // if not.
+
+    // TODO(Subv): This should return 0xc8a0cff0 if the applet preparation state is already set
+
+    const auto& application_slot = applet_slots[static_cast<size_t>(AppletSlot::Application)];
+
+    if (application_slot.registered) {
+        // TODO(Subv): Return 0xc8a0cffc
+        return ResultCode(-1);
+    }
+
+    app_start_parameters.next_title_id = title_id;
+    app_start_parameters.next_media_type = media_type;
+
+    return RESULT_SUCCESS;
+}
+
+ResultCode AppletManager::StartApplication(std::vector<u8> parameter, std::vector<u8> hmac) {
+    // The delivery argument is always unconditionally set.
+    SetDeliveryArg(std::move(parameter), std::move(hmac));
+
+    // Note: APT first checks if we can launch the application via AM::CheckDemoLaunchRights and
+    // returns 0xc8a12403 if we can't. We intentionally do not implement that check.
+
+    // TODO(Subv): The APT service performs several checks here related to the exheader flags of the
+    // process we're launching and other things like title id blacklists. We do not yet implement
+    // any of that.
+
+    // Launch the title directly.
+    auto process =
+        NS::LaunchTitle(app_start_parameters.next_media_type, app_start_parameters.next_title_id);
+    if (!process) {
+        LOG_CRITICAL(Service_APT, "Failed to launch title during application start, exiting.");
+        system.RequestShutdown();
+    }
+
+    // TODO(Subv): Send a WAKEUP signal via the apt parameter to the application. Right now our
+    // APT::Initialize implementation already does that because we have to support launching titles
+    // directly.
+
+    return RESULT_SUCCESS;
+}
+
+void AppletManager::SetDeliveryArg(std::vector<u8> parameter, std::vector<u8> hmac) {
+    auto& argument = delivery_arg.emplace();
+    argument.parameter = std::move(parameter);
+    argument.hmac = std::move(hmac);
+}
+
 void AppletManager::EnsureHomeMenuLoaded() {
     const auto& system_slot = applet_slots[static_cast<size_t>(AppletSlot::SystemApplet)];
     // TODO(Subv): The real APT service sends signal 12 (WakeupByCancel) to the currently running
