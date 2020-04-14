@@ -482,10 +482,19 @@ void Module::APTInterface::StartApplication(Kernel::HLERequestContext& ctx) {
     std::vector<u8> hmac = rp.PopStaticBuffer();
 
     IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
-    rb.Push(apt->applet_manager->StartApplication(parameter, hmac));
+    rb.Push(apt->applet_manager->StartApplication(parameter, hmac, paused));
 
     LOG_DEBUG(Service_APT, "called parameter_size={:#010X}, hmac_size={:#010X}, paused={}",
               parameter_size, hmac_size, paused);
+}
+
+void Module::APTInterface::WakeupApplication(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx, 0x1C, 0, 0); // 0x001C0000
+
+    IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
+    rb.Push(apt->applet_manager->WakeupApplication());
+
+    LOG_DEBUG(Service_APT, "called");
 }
 
 void Module::APTInterface::AppletUtility(Kernel::HLERequestContext& ctx) {

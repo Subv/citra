@@ -150,7 +150,9 @@ public:
                                           ApplicationJumpFlags flags);
     ResultCode DoApplicationJump();
     ResultCode PrepareToStartApplication(u64 title_id, FS::MediaType media_type);
-    ResultCode StartApplication(std::vector<u8> parameter, std::vector<u8> hmac);
+    ResultCode StartApplication(const std::vector<u8>& parameter, const std::vector<u8>& hmac,
+                                bool paused);
+    ResultCode WakeupApplication();
 
     struct AppletInfo {
         u64 title_id;
@@ -186,6 +188,10 @@ public:
 private:
     /// Parameter data to be returned in the next call to Glance/ReceiveParameter.
     std::optional<MessageParameter> next_parameter;
+
+    /// This parameter will be sent to the application/applet once they register themselves by using
+    /// APT::Initialize.
+    std::optional<MessageParameter> delayed_parameter;
 
     std::optional<DeliveryArgument> delivery_arg;
 
@@ -229,7 +235,12 @@ private:
     AppletSlotData* GetAppletSlotData(AppletId id);
     AppletSlotData* GetAppletSlotData(AppletAttributes attributes);
 
-    void SetDeliveryArg(std::vector<u8> parameter, std::vector<u8> hmac);
+    /// Sets the APT delivery argument. Applications can read it with APT::ReceiveDeliveryArg
+    void SetDeliveryArg(const std::vector<u8>& parameter, const std::vector<u8>& hmac);
+
+    /// Checks if the Application slot has already been registered and sends the parameter to it,
+    /// otherwise it queues for sending when the application registers itself with APT::Enable.
+    void SendApplicationParameterAfterRegistration(const MessageParameter& parameter);
 
     void EnsureHomeMenuLoaded();
 
