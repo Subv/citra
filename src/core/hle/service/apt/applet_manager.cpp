@@ -603,14 +603,7 @@ ResultCode AppletManager::StartApplication(const std::vector<u8>& parameter,
     app_start_parameters.reset();
 
     if (!paused) {
-        // Send a Wakeup signal via the apt parameter to the application once it registers itself.
-        // The real APT service does this by spinwaiting on another thread until the application is
-        // registered.
-        MessageParameter wakeup_parameter{};
-        wakeup_parameter.signal = SignalType::Wakeup;
-        wakeup_parameter.sender_id = AppletId::HomeMenu;
-        wakeup_parameter.destination_id = AppletId::Application;
-        SendApplicationParameterAfterRegistration(wakeup_parameter);
+        return WakeupApplication();
     }
 
     return RESULT_SUCCESS;
