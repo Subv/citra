@@ -181,10 +181,6 @@ public:
         FS::MediaType next_media_type;
     };
 
-    ApplicationStartParameters GetApplicationStartParameters() const {
-        return app_start_parameters;
-    }
-
 private:
     /// Parameter data to be returned in the next call to Glance/ReceiveParameter.
     std::optional<MessageParameter> next_parameter;
@@ -226,7 +222,7 @@ private:
     };
 
     ApplicationJumpParameters app_jump_parameters{};
-    ApplicationStartParameters app_start_parameters{};
+    std::optional<ApplicationStartParameters> app_start_parameters;
 
     // Holds data about the concurrently running applets in the system.
     std::array<AppletSlotData, NumAppletSlot> applet_slots = {};
