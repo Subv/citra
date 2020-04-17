@@ -23,7 +23,7 @@ enum {
     InvalidOpenFlags = 230,
     DirectoryNotEmpty = 240,
     NotAFile = 250,
-    NotFormatted = 340, ///< This is used by the FS service when creating a SaveData archive
+    NotFormatted = 341, ///< This is used by the FS service when creating a SaveData archive
     ExeFSSectionNotFound = 567,
     CommandNotAllowed = 630,
     InvalidReadFlag = 700,
